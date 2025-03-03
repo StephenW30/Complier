@@ -309,3 +309,105 @@ function [x, y] = bresenham(x1, y1, x2, y2)
         end
     end
 end
+
+
+
+
+function finalImg = fillPLStarStructure_enhanced(masking, waferImg)
+    % Enhanced PL Star filling for subtle but more perceptible defect visualization
+    % This version creates a subtle pattern within the PL star that remains close
+    % to the background but has enough structure to be more easily detected
+    
+    %% Parameter settings
+    % Basic parameters
+    filterSize = 5;              % Size of Gaussian filter kernel
+    sigma = 1;                   % Standard deviation of Gaussian filter
+    noiseLevel = 0.0002;         % Base noise level
+    
+    % Contrast parameters - subtle but enhanced
+    baseReduction = 0.001;       % Base reduction from background (0.1%)
+    edgeReduction = 0.002;       % Slightly stronger reduction at edges (0.2%)
+    maxReduction = 0.003;        % Maximum reduction from background (0.3%)
+    
+    % Pattern variation parameters
+    patternFreq = 0.05;          % Frequency of pattern variation (smaller = more gradual)
+    patternAmplitude = 0.0005;   % Amplitude of pattern variation (0.05%)
+    
+    % Edge detection parameters
+    edgeWidth = 3;               % Width of enhanced edge in pixels
+    
+    %% 1. Create distance map for edge enhancement
+    % Calculate distance from each pixel in the mask to the nearest non-mask pixel
+    distMap = bwdist(~masking);
+    
+    % Normalize distances to range [0,1] for pixels in the mask
+    maxDist = max(distMap(masking == 1));
+    if maxDist > 0
+        distMap = distMap / maxDist;
+    end
+    
+    % Create edge weight map (higher values near edges)
+    edgeWeightMap = zeros(size(masking));
+    edgeIndices = (masking == 1) & (distMap <= edgeWidth/maxDist);
+    edgeWeightMap(edgeIndices) = 1 - (distMap(edgeIndices) * maxDist / edgeWidth);
+    
+    %% 2. Smooth background for reference values
+    h = fspecial('gaussian', filterSize, sigma);
+    backgroundSmoothed = imfilter(waferImg, h);
+    
+    %% 3. Create a copy of the original image as starting point
+    finalImg = waferImg;
+    
+    %% 4. Find mask pixels
+    [rows, cols] = find(masking == 1);
+    
+    %% 5. Process each pixel in the mask
+    for i = 1:length(rows)
+        r = rows(i);
+        c = cols(i);
+        
+        % Get background reference value
+        backgroundValue = backgroundSmoothed(r, c);
+        
+        % Calculate spatial variation factor using sine/cosine pattern
+        % This creates a subtle wavy pattern within the PL star
+        spatialFactor = patternAmplitude * sin(patternFreq * r) * cos(patternFreq * c);
+        
+        % Get edge weight (higher near edges)
+        edgeWeight = edgeWeightMap(r, c);
+        
+        % Calculate reduction amount
+        % - Base reduction applies to all PL star pixels
+        % - Edge pixels get additional reduction for better definition
+        % - Spatial pattern adds subtle structure
+        % - Random variation adds natural noise
+        reduction = baseReduction + 
+                   (edgeReduction * edgeWeight) + 
+                   spatialFactor + 
+                   (maxReduction - baseReduction) * 0.3 * rand();
+        
+        % Calculate scaling factor (amount to multiply the original value by)
+        scalingFactor = 1 - reduction;
+        
+        % Apply scaling and add small noise
+        newValue = backgroundValue * scalingFactor + noiseLevel * rand();
+        
+        % Ensure value remains positive (important for many image formats)
+        newValue = max(newValue, 0);
+        
+        % Update the final image
+        finalImg(r, c) = newValue;
+    end
+    
+    %% 6. Optional post-processing for smoother transitions
+    % Apply a very light gaussian filter just to the modified area
+    % This helps blend any sharp transitions at the boundaries
+    maskIndices = masking == 1;
+    tempImg = finalImg;
+    
+    h_small = fspecial('gaussian', 3, 0.5);
+    smoothedArea = imfilter(tempImg, h_small);
+    
+    % Only apply smoothing to the mask area
+    finalImg(maskIndices) = smoothedArea(maskIndices);
+end
