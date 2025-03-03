@@ -9,7 +9,7 @@ addpath('D:\stephen\git_Toolbox');  % Add the specified path to the MATLAB searc
 iFigure = 100;  % Figure number for plotting
 
 % Set folder path and parameters for data loading
-strFolderPath = 'D:\StephenPL starldatalsurface Inspection(0)_2025-02-01-19-10-39 SuperFine1Res';
+strFolderPath = 'D:\Stephen\PL star\data\Surface_Inspection(0)_2025-02-01-19-10-39_SuperFine1Res';
 % Name of the file to load
 strHazeMap = 'P2cHaze_Grp[1]FT[MED]Res[100]ch[2]_03_Nppm';
 % Pixel size in mm
@@ -97,7 +97,7 @@ for i = 1:length(cellstrMapToPlot)
     end
     
     func_ChangeColorForNaN(gca);  % Change color for NaN values (custom function)
-    func_GetDatastatcurrRoI(gca, true, [5 95]);  % Get data statistics (custom function)
+    func_GetDataStatCurrROI(gca, true, [5 95]);  % Corrected function name here
     
     if (bPlotInMm)
         xlabel('x(mm)');
