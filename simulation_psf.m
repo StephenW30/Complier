@@ -19,9 +19,9 @@ CONFIG = struct(...
     'PLstarLength', 100, ...                       % Length from center to outer vertices
     'PLstarWidth', 5, ...                          % Width of the PL star lines
     'PSF', struct(...                              % PSF parameters
-        'Size', 7, ...                             % Size of PSF kernel
-        'Sigma', 1.5, ...                          % Sigma for Gaussian PSF
-        'DefectDepth', 0.002 ...                   % Defect depth/contrast (0.2%)
+        'Size', 9, ...                             % Size of PSF kernel (larger for smoother edges)
+        'Sigma', 2.0, ...                          % Sigma for Gaussian PSF (larger for more diffuse effect)
+        'DefectDepth', 0.0005 ...                  % Very subtle defect depth/contrast (0.05%)
     )...
 );
 
@@ -197,9 +197,9 @@ function finalImg = fillPLStarStructure_PSF(masking, waferImg, psfConfig)
     defectDepth = psfConfig.DefectDepth; % Defect strength
     
     % Additional parameters
-    filterSize = 5;                     % Size of Gaussian filter for background
-    sigma = 1;                          % Sigma for background smoothing
-    noiseLevel = 0.0002;                % Random noise level
+    filterSize = 7;                     % Size of Gaussian filter for background (larger for smoother background)
+    sigma = 1.5;                        % Sigma for background smoothing (increased for more blending)
+    noiseLevel = 0.0001;                % Reduced noise level for subtle effect
     
     % 1. Create PSF kernel (Gaussian PSF model)
     [x, y] = meshgrid(-floor(psfSize/2):floor(psfSize/2), -floor(psfSize/2):floor(psfSize/2));
@@ -222,11 +222,30 @@ function finalImg = fillPLStarStructure_PSF(masking, waferImg, psfConfig)
     
     % 6. Apply the PSF-modulated defect to the background (vectorized implementation)
     maskIndices = masking == 1;
-    randomNoise = noiseLevel * rand(size(waferImg));
+    
+    % Create very subtle noise with reduced amplitude
+    randomNoise = noiseLevel * (rand(size(waferImg)) - 0.5);
+    
+    % Calculate scaling factors from PSF (ensure extremely subtle effect)
     scaleFactors = ones(size(waferImg)) + defectPSF;
     
-    % Apply to masked areas
+    % Further dampen the effect to make it barely noticeable
+    effectDampening = 0.7;  % Reduce effect by 30%
+    scaleFactors = 1 + (scaleFactors - 1) * effectDampening;
+    
+    % Apply to masked areas with careful blending to avoid detectability
+    % Expand the affected area slightly beyond mask for smoother transition
+    expandedMask = imfilter(double(masking), fspecial('gaussian', 5, 1.5)) > 0.01;
+    transitionMask = expandedMask & ~maskIndices;
+    
+    % Apply full effect to main mask
     finalImg(maskIndices) = backgroundSmoothed(maskIndices) .* scaleFactors(maskIndices) + randomNoise(maskIndices);
+    
+    % Apply reduced effect to transition area for smoother blending with background
+    if any(transitionMask(:))
+        transitionEffect = (scaleFactors(transitionMask) - 1) * 0.5 + 1;  % Half strength in transition zone
+        finalImg(transitionMask) = backgroundSmoothed(transitionMask) .* transitionEffect + randomNoise(transitionMask) * 0.5;
+    end
 end
 
 % Manually Generate PL Star
