@@ -3,6 +3,7 @@
 clear all; close all; clc;
 addpath('D:\stephen\git_Toolbox');  % 添加工具箱路径
 
+%% 主脚本
 % 设置全局常量和配置参数
 CONFIG = struct(...
     'FigureNumber', 100, ...                       % 图形编号
@@ -19,7 +20,19 @@ CONFIG = struct(...
     'PLstarWidth', 5 ...                           % PL星线条宽度
 );
 
-%% 加载数据
+% 加载原始数据
+rawMap = loadRawData(CONFIG);
+
+% 生成PL星图
+maps = generatePLStarMaps(rawMap, CONFIG);
+
+% 计算坐标
+coords = calculateCoordinates(CONFIG);
+
+% 绘制地图
+plotMaps(maps, coords, CONFIG);
+
+%% 加载数据函数
 function rawData = loadRawData(config)
     % 构建完整文件路径
     filePath = fullfile(config.FolderPath, [config.HazeMapFile, '.raw']);
@@ -137,24 +150,6 @@ function plotMaps(maps, coords, config)
     % 添加超标题
     tt = {sprintf('%s', config.FolderPath), sprintf('%s', config.HazeMapFile)};
     suptitle(tt, 10);
-end
-
-%% 主函数
-function main()
-    % 加载配置
-    config = CONFIG;
-    
-    % 加载原始数据
-    rawMap = loadRawData(config);
-    
-    % 生成PL星图
-    maps = generatePLStarMaps(rawMap, config);
-    
-    % 计算坐标
-    coords = calculateCoordinates(config);
-    
-    % 绘制地图
-    plotMaps(maps, coords, config);
 end
 
 %% 辅助函数
@@ -314,6 +309,3 @@ function [x, y] = bresenham(x1, y1, x2, y2)
         end
     end
 end
-
-% 调用主函数
-main();
