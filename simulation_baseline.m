@@ -190,7 +190,7 @@ function finalImg = fillPLStarStructure(masking, waferImg)
         
         % Calculate new value and add noise
         newValue = backgroundValue * scalingFactor;
-        newValue = newValue + noiseLevel * rand();
+        newValue = newValue + noiseLevel * (rand()-0.5);
         finalImg(r, c) = newValue;
     end
 end
@@ -310,3 +310,55 @@ function [x, y] = bresenham(x1, y1, x2, y2)
     end
 end
 
+
+
+
+
+%% Fill PL Star Structure with Radial Intensity Variation (No Attenuation)
+function finalImg = fillPLStarStructure(masking, waferImg, config)
+    % Parameter settings
+    filterSize = 5;
+    sigma = 1;
+    thresholdLow = 0.0005;
+    thresholdMed = 0.001;
+    thresholdHigh = 0.003;
+    
+    % Create Gaussian filter
+    h = fspecial('gaussian', filterSize, sigma);
+    backgroundSmoothed = imfilter(waferImg, h);
+    
+    % 仅计算掩码区域的噪声水平
+    diff = waferImg - backgroundSmoothed;
+    maskDiff = diff(masking == 1);  % 关注PL Star区域内的噪声
+    if ~isempty(maskDiff)
+        noiseLevel = std(maskDiff(:));  % 基于PL Star区域噪声统计
+    else
+        noiseLevel = 0.0002;  % 安全回退值
+    end
+    
+    % 初始化输出图像
+    finalImg = waferImg;
+    
+    % 提取掩码坐标
+    [rows, cols] = find(masking == 1);
+    
+    % 处理每个掩码像素
+    for i = 1:length(rows)
+        r = rows(i);
+        c = cols(i);
+        backgroundValue = backgroundSmoothed(r, c);
+        randProb = rand();
+        
+        % 移除径向衰减因子，直接使用随机阈值
+        if randProb < 0.3
+            scalingFactor = 1 - thresholdMed + (thresholdMed - thresholdLow) * rand();
+        else
+            scalingFactor = 1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand();
+        end
+        
+        % 合成新像素值
+        newValue = backgroundValue * scalingFactor;
+        newValue = newValue + noiseLevel * randn();  % 改用高斯噪声更符合实际
+        finalImg(r, c) = newValue;
+    end
+end
