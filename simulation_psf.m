@@ -7,7 +7,7 @@ addpath('D:\stephen\git_Toolbox');  % Add toolbox path to MATLAB search path
 % Set global constants and configuration parameters
 CONFIG = struct(...
     'FigureNumber', 100, ...                       % Figure number for plotting
-    'FolderPath', 'D:\StephenPL starldatalsurface Inspection(0)_2025-02-01-19-10-39 SuperFine1Res', ...
+    'FolderPath', 'D:\StephenPL star\data\Surface_Inspection(0)_2025-02-01-19-10-39_SuperFine1Res', ...
     'HazeMapFile', 'P2cHaze_Grp[1]FT[MED]Res[100]ch[2]_03_Nppm', ...
     'PixelSizeMm', 0.1, ...                        % Pixel size in mm
     'WaferName', 'sc1 Wolfspeed', ...              % Wafer name
@@ -59,7 +59,7 @@ function maps = generatePLStarMaps(rawMap, config)
     maps = struct();
     
     % Set image size
-    imageSize = 1500;
+    imageSize = config.WaferSizeMm / config.PixelSizeMm;
     
     % Generate PL star mask
     maskMap = generatePLStar(imageSize, config.PLstarCenter.X, config.PLstarCenter.Y, ...
