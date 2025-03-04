@@ -291,3 +291,57 @@ end
 
 % 调用主程序
 main();
+
+
+
+
+
+
+%% Fill PL Star Structure with Radial Intensity Variation
+function finalImg = fillPLStarStructure(masking, waferImg, config)
+    % Parameter settings
+    filterSize = 5;
+    sigma = 1;
+    noiseLevel = 0.0002;
+    thresholdLow = 0.995;
+    thresholdMed = 0.99;
+    thresholdHigh = 0.97;
+    
+    % Create Gaussian filter
+    h = fspecial('gaussian', filterSize, sigma);
+    backgroundSmoothed = imfilter(waferImg, h);
+    
+    % Copy original image
+    finalImg = waferImg;
+    
+    % Find points where mask equals 1
+    [rows, cols] = find(masking == 1);
+    centerX = config.PLstarCenter.X;
+    centerY = config.PLstarCenter.Y;
+    maxDist = config.PLstarLength;
+    
+    % Process each point
+    for i = 1:length(rows)
+        r = rows(i);
+        c = cols(i);
+        backgroundValue = backgroundSmoothed(r, c);
+        randProb = rand();
+        
+        % Compute radial distance from center
+        distance = sqrt((c - centerX)^2 + (r - centerY)^2);
+        attenuationFactor = 1 - (distance / maxDist) * 0.3; % Linearly decrease intensity
+        attenuationFactor = max(attenuationFactor, 0.7); % Ensure minimum attenuation
+        
+        % Choose scaling factor based on random probability
+        if randProb < 0.3
+            scalingFactor = (thresholdMed + (thresholdLow - thresholdMed) * rand()) * attenuationFactor;
+        else
+            scalingFactor = (thresholdHigh + (thresholdMed - thresholdHigh) * rand()) * attenuationFactor;
+        end
+        
+        % Calculate new value and add noise
+        newValue = backgroundValue * scalingFactor;
+        newValue = newValue + noiseLevel * rand();
+        finalImg(r, c) = newValue;
+    end
+end
