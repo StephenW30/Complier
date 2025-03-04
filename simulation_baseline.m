@@ -323,17 +323,22 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
     thresholdMed = 0.001;
     thresholdHigh = 0.003;
     
+    % 输入数据验证：确保无NaN/Inf
+    waferImg = double(waferImg); % 转换为双精度避免计算问题
+    waferImg(isfinite(waferImg)==0) = 0; % 替换NaN/Inf为0
+    
     % Create Gaussian filter
     h = fspecial('gaussian', filterSize, sigma);
-    backgroundSmoothed = imfilter(waferImg, h);
+    backgroundSmoothed = imfilter(waferImg, h, 'replicate'); % 添加边界处理
     
-    % 仅计算掩码区域的噪声水平
+    % 仅计算掩码区域的噪声水平（修复NaN问题）
     diff = waferImg - backgroundSmoothed;
-    maskDiff = diff(masking == 1);  % 关注PL Star区域内的噪声
-    if ~isempty(maskDiff)
-        noiseLevel = std(maskDiff(:));  % 基于PL Star区域噪声统计
+    maskDiff = diff(masking == 1); 
+    maskDiff = maskDiff(isfinite(maskDiff)); % 移除NaN/Inf
+    if ~isempty(maskDiff) && var(maskDiff) > 0
+        noiseLevel = std(maskDiff);
     else
-        noiseLevel = 0.0002;  % 安全回退值
+        noiseLevel = 0.0002; 
     end
     
     % 初始化输出图像
@@ -347,18 +352,26 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
         r = rows(i);
         c = cols(i);
         backgroundValue = backgroundSmoothed(r, c);
+        
+        % 确保背景值为有效数值
+        if ~isfinite(backgroundValue)
+            backgroundValue = 0;
+        end
+        
         randProb = rand();
         
-        % 移除径向衰减因子，直接使用随机阈值
+        % 计算缩放因子（修复数值稳定性）
         if randProb < 0.3
             scalingFactor = 1 - thresholdMed + (thresholdMed - thresholdLow) * rand();
         else
             scalingFactor = 1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand();
         end
+        scalingFactor = max(min(scalingFactor, 1), 0); % 限制在[0,1]之间
         
         % 合成新像素值
         newValue = backgroundValue * scalingFactor;
-        newValue = newValue + noiseLevel * randn();  % 改用高斯噪声更符合实际
+        noise = noiseLevel * randn();
+        newValue = newValue + noise;
         finalImg(r, c) = newValue;
     end
 end
