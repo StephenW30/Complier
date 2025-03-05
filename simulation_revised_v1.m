@@ -166,40 +166,98 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     end
     
     % Define angles for the 6 points of the PL star (in degrees)
-    % 确保各个臂之间的角度保持 60 度间隔
     angles = [0, 60, 120, 180, 240, 300];
     
     % Convert to radians
     anglesRad = deg2rad(angles);
     
-    % Calculate endpoints based on elliptical boundary
+    % Calculate endpoints based on very long lines (much longer than the ellipse)
+    % This ensures we can find intersection with ellipse
+    maxLength = max(imageSize, max(ellipseMajor, ellipseMinor) * 2);
+    
+    % First create long lines in all 6 directions
+    xTemp = zeros(1, length(angles));
+    yTemp = zeros(1, length(angles));
+    
+    for i = 1:length(angles)
+        xTemp(i) = round(centerX + maxLength * cos(anglesRad(i)));
+        yTemp(i) = round(centerY + maxLength * sin(anglesRad(i)));
+    end
+    
+    % Now find intersection points with the ellipse for each line
     xEnd = zeros(1, length(angles));
     yEnd = zeros(1, length(angles));
     
-    % 确保椭圆在 Y 方向（垂直方向）更长
-    if ellipseMajor < ellipseMinor
-        temp = ellipseMajor;
-        ellipseMajor = ellipseMinor;
-        ellipseMinor = temp;
-    end
-    
     for i = 1:length(angles)
-        % Calculate parametric angle for ellipse
-        t = anglesRad(i);
+        % Find intersection of the line from center to (xTemp,yTemp) with the ellipse
+        [xIntersect, yIntersect] = lineEllipseIntersection(centerX, centerY, xTemp(i), yTemp(i), 
+                                                          centerX, centerY, ellipseMinor, ellipseMajor);
         
-        % 使用椭圆方程计算端点
-        % Y 方向使用长轴（更长），X 方向使用短轴（更短）
-        xDist = ellipseMinor * cos(t);  % X 使用短轴
-        yDist = ellipseMajor * sin(t);  % Y 使用长轴
-        
-        % 计算端点
-        xEnd(i) = round(centerX + xDist);
-        yEnd(i) = round(centerY + yDist);
+        % Use the first intersection point (closest to center)
+        if ~isempty(xIntersect)
+            xEnd(i) = round(xIntersect(1));
+            yEnd(i) = round(yIntersect(1));
+        else
+            % Fallback if no intersection found (shouldn't happen with sufficiently large maxLength)
+            xEnd(i) = xTemp(i);
+            yEnd(i) = yTemp(i);
+        end
     end
     
     % Draw each line
     for i = 1:length(angles)
         img = drawLine(img, waferImg, centerX, centerY, xEnd(i), yEnd(i), width);
+    end
+end
+
+%% Find intersection between a line and an ellipse
+function [xIntersect, yIntersect] = lineEllipseIntersection(x1, y1, x2, y2, cx, cy, a, b)
+    % Input:
+    %   (x1,y1) and (x2,y2) are the endpoints of the line
+    %   (cx,cy) is the center of the ellipse
+    %   a is the semi-minor axis (X direction)
+    %   b is the semi-major axis (Y direction)
+    
+    % Translate to make ellipse centered at origin
+    x1 = x1 - cx;
+    y1 = y1 - cy;
+    x2 = x2 - cx;
+    y2 = y2 - cy;
+    
+    % Parametric equation of the line: (x,y) = (x1,y1) + t*((x2-x1),(y2-y1))
+    dx = x2 - x1;
+    dy = y2 - y1;
+    
+    % Quadratic formula coefficients
+    A = (dx*dx)/(a*a) + (dy*dy)/(b*b);
+    B = 2*((x1*dx)/(a*a) + (y1*dy)/(b*b));
+    C = (x1*x1)/(a*a) + (y1*y1)/(b*b) - 1;
+    
+    % Calculate discriminant
+    discriminant = B*B - 4*A*C;
+    
+    % If discriminant is negative, no intersection
+    if discriminant < 0
+        xIntersect = [];
+        yIntersect = [];
+        return;
+    end
+    
+    % Calculate intersection parameters
+    t1 = (-B + sqrt(discriminant)) / (2*A);
+    t2 = (-B - sqrt(discriminant)) / (2*A);
+    
+    % Calculate intersection points
+    xIntersect = [x1 + t1*dx, x1 + t2*dx] + cx;
+    yIntersect = [y1 + t1*dy, y1 + t2*dy] + cy;
+    
+    % Sort based on distance from original point (x1,y1)
+    dist1 = (xIntersect(1) - (x1+cx))^2 + (yIntersect(1) - (y1+cy))^2;
+    dist2 = (xIntersect(2) - (x1+cx))^2 + (yIntersect(2) - (y1+cy))^2;
+    
+    if dist2 < dist1
+        xIntersect = [xIntersect(2), xIntersect(1)];
+        yIntersect = [yIntersect(2), yIntersect(1)];
     end
 end
 
