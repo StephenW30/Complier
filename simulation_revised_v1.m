@@ -62,7 +62,7 @@ function maps = generatePLStarMaps(rawMap, config)
                           config.PLstarWidth, rawMap);
     
     % Simulate filling PL star structure
-    simulateMap = fillPLStarStructure(maskMap, rawMap, config);
+    simulateMap = fillPLStarStructure(maskMap, rawMap);
     
     % Save all maps
     maps.RawMap = rawMap;
@@ -166,6 +166,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     end
     
     % Define angles for the 6 points of the PL star (in degrees)
+    % 确保各个臂之间的角度保持 60 度间隔
     angles = [0, 60, 120, 180, 240, 300];
     
     % Convert to radians
@@ -175,11 +176,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     xEnd = zeros(1, length(angles));
     yEnd = zeros(1, length(angles));
     
-    % Ensure the ellipse has major axis along Y direction (vertically elongated)
-    % We swap if necessary to ensure Y-axis (vertical) is longer than X-axis (horizontal)
-    verticalEllipse = true;  % Force vertical ellipse (Y-axis longer)
-    
-    % If we need to swap axes to make vertical longer
+    % 确保椭圆在 Y 方向（垂直方向）更长
     if ellipseMajor < ellipseMinor
         temp = ellipseMajor;
         ellipseMajor = ellipseMinor;
@@ -190,22 +187,12 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
         % Calculate parametric angle for ellipse
         t = anglesRad(i);
         
-        % Calculate endpoint based on elliptical shape
-        % For vertical ellipse, the Y component uses the major axis (longer)
-        if verticalEllipse
-            xDist = ellipseMinor * cos(t);  % X uses minor axis (shorter)
-            yDist = ellipseMajor * sin(t);  % Y uses major axis (longer)
-        else
-            xDist = ellipseMajor * cos(t);
-            yDist = ellipseMinor * sin(t);
-        end
+        % 使用椭圆方程计算端点
+        % Y 方向使用长轴（更长），X 方向使用短轴（更短）
+        xDist = ellipseMinor * cos(t);  % X 使用短轴
+        yDist = ellipseMajor * sin(t);  % Y 使用长轴
         
-        % Add random variation to the length (±10%)
-        variationFactor = 0.9 + 0.2 * rand();
-        xDist = xDist * variationFactor;
-        yDist = yDist * variationFactor;
-        
-        % Calculate endpoint
+        % 计算端点
         xEnd(i) = round(centerX + xDist);
         yEnd(i) = round(centerY + yDist);
     end
@@ -303,64 +290,43 @@ function [x, y] = bresenham(x1, y1, x2, y2)
     end
 end
 
-%% Fill PL Star Structure with Improved Error Handling
+%% Fill PL Star Structure
 function finalImg = fillPLStarStructure(masking, waferImg, config)
     % Parameter settings
     filterSize = 5;
     sigma = 1;
+    noiseLevel = 0.0002;
     thresholdLow = 0.0005;
     thresholdMed = 0.001;
     thresholdHigh = 0.003;
     
-    % Input data validation: ensure no NaN/Inf
-    waferImg = double(waferImg); 
-    waferImg(isfinite(waferImg)==0) = 0; % Replace NaN/Inf with 0
-    
     % Create Gaussian filter
     h = fspecial('gaussian', filterSize, sigma);
-    backgroundSmoothed = imfilter(waferImg, h, 'replicate'); % Add boundary handling
+    backgroundSmoothed = imfilter(waferImg, h);
     
-    % Calculate noise level only in mask region (fixing NaN issue)
-    diff = waferImg - backgroundSmoothed;
-    maskDiff = diff(masking == 1); 
-    maskDiff = maskDiff(isfinite(maskDiff)); % Remove NaN/Inf
-    if ~isempty(maskDiff) && var(maskDiff) > 0
-        noiseLevel = std(maskDiff);
-    else
-        noiseLevel = 0.0002; 
-    end
-    
-    % Initialize output image
+    % Copy original image
     finalImg = waferImg;
     
-    % Extract mask coordinates
+    % Find points where mask equals 1
     [rows, cols] = find(masking == 1);
     
-    % Process each masked pixel
+    % Process each point
     for i = 1:length(rows)
         r = rows(i);
         c = cols(i);
         backgroundValue = backgroundSmoothed(r, c);
-        
-        % Ensure background value is valid
-        if ~isfinite(backgroundValue)
-            backgroundValue = 0;
-        end
-        
         randProb = rand();
         
-        % Calculate scaling factor (fix numerical stability)
+        % Choose scaling factor based on random probability
         if randProb < 0.3
-            scalingFactor = 1 - thresholdMed + (thresholdMed - thresholdLow) * rand();
+            scalingFactor = (1 - thresholdMed + (thresholdMed - thresholdLow) * rand());
         else
-            scalingFactor = 1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand();
+            scalingFactor = (1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand());
         end
-        scalingFactor = max(min(scalingFactor, 1), 0); % Constrain to [0,1]
         
-        % Synthesize new pixel value
+        % Calculate new value and add noise
         newValue = backgroundValue * scalingFactor;
-        noise = noiseLevel * randn();
-        newValue = newValue + noise;
+        newValue = newValue + noiseLevel * (rand()-0.5);
         finalImg(r, c) = newValue;
     end
 end
