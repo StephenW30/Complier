@@ -489,3 +489,66 @@ function suptitle(txt, fs)
             'FontSize', fs, 'FontWeight', 'bold');
     end
 end
+
+
+
+%% Fill PL Star Structure
+function finalImg = fillPLStarStructure(masking, waferImg)
+    % Parameter settings
+    filterSize = 5;
+    sigma = 1;
+    thresholdLow = 0.0005 * 2;
+    thresholdMed = 0.001 * 2;
+    thresholdHigh = 0.003 * 2;
+    
+    % Create Gaussian filter
+    h = fspecial('gaussian', filterSize, sigma);
+    backgroundSmoothed = imfilter(waferImg, h);
+    nanMask = isnan(backgroundSmoothed);
+    backgroundSmoothed(nanMask & ~isnan(waferImg)) = waferImg(nanMask & ~isnan(waferImg));
+
+    diffImg = waferImg - backgroundSmoothed;
+    
+    % Fix: Convert masking to logical type and ensure diffImg is double
+    maskIndices = logical(masking);
+    diffValues = double(diffImg(maskIndices));
+    
+    % Calculate statistics with omitnan option
+    if ~isempty(diffValues)
+        noiseMean = mean(diffValues, 'omitnan');
+        noiseStd = std(diffValues, 'omitnan');
+    else
+        % If no valid mask points, set defaults
+        noiseMean = 0;
+        noiseStd = 0.001;
+    end
+
+    disp(['Noise Mean: ', num2str(noiseMean)]);
+    disp(['Noise Std: ', num2str(noiseStd)]);
+    
+    % Copy original image
+    finalImg = waferImg;
+    
+    % Find points where mask equals 1
+    [rows, cols] = find(maskIndices);
+    
+    % Process each point
+    for i = 1:length(rows)
+        r = rows(i);
+        c = cols(i);
+        backgroundValue = backgroundSmoothed(r, c);
+        randProb = rand();
+        
+        % Choose scaling factor based on random probability
+        if randProb < 0.3
+            scalingFactor = (1 - thresholdMed + (thresholdMed - thresholdLow) * rand());
+        else
+            scalingFactor = (1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand());
+        end
+        
+        % Calculate new value and add noise
+        newValue = backgroundValue * scalingFactor;
+        newValue = newValue + min(noiseStd, thresholdLow) * randn() * 0.1;
+        finalImg(r, c) = newValue;
+    end
+end
