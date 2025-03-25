@@ -362,6 +362,15 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
     % Create Gaussian filter
     h = fspecial('gaussian', filterSize, sigma);
     backgroundSmoothed = imfilter(waferImg, h);
+    nanMask = isnan(backgroundSmoothed);
+    backgroundSmoothed(nanMask & ~isnan(waferImg)) waferImg(nanMask & ~isnan(waferImg));
+
+    diffImg = waferImg - backgroundSmoothed;
+    noiseMean = mean(diffImg(masking==1));
+    noiseStd = std(diffImg(masking==1));
+
+    disp(noiseMean);
+    disp(noiseStd);
     
     % Copy original image
     finalImg = waferImg;
@@ -385,7 +394,7 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
         
         % Calculate new value and add noise
         newValue = backgroundValue * scalingFactor;
-        newValue = newValue + min(noiseStd, threshold) * randn() * 0.1;
+        newValue = newValue + min(noiseStd, thresholdLow) * randn() * 0.1;
         finalImg(r, c) = newValue;
     end
 end
