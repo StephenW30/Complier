@@ -363,7 +363,7 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
     h = fspecial('gaussian', filterSize, sigma);
     backgroundSmoothed = imfilter(waferImg, h);
     nanMask = isnan(backgroundSmoothed);
-    backgroundSmoothed(nanMask & ~isnan(waferImg)) waferImg(nanMask & ~isnan(waferImg));
+    backgroundSmoothed(nanMask & ~isnan(waferImg)) = waferImg(nanMask & ~isnan(waferImg));
 
     diffImg = waferImg - backgroundSmoothed;
     noiseMean = mean(diffImg(masking==1));
