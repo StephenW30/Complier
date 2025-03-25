@@ -1,312 +1,160 @@
-%% 批量处理PL Star分析脚本
-% 清空工作区并关闭所有图形
+%% PL Star Analysis Script (Refactored)
+% Clean workspace and close all figures
 clear all; close all; clc;
-addpath('D:\stephen\git_Toolbox');  % 添加工具箱路径到MATLAB搜索路径
+addpath('D:\stephen\git_Toolbox');  % Keep the toolbox path if needed
 
-%% 主脚本 - 批量处理
-% 设置全局常量和配置参数
+%% Configuration Parameters
 CONFIG = struct(...
-    'FigureNumber', 100, ...                     % 用于绘图的图形编号
-    'FolderPath', 'D:\Stephen\PL star\data', ... % 指定包含.mat文件的文件夹
-    'OutputFolder', 'D:\Stephen\PL star\output', ... % 输出文件夹
-    'PixelSizeMm', 0.1, ...                      % 像素大小（毫米）
-    'PlotInMm', false, ...                       % 是否以毫米为单位绘图
-    'IsAPS1', false, ...                         % APS1标志
-    'PLstarEllipseRatio', struct('MajorAxis', 0.3, 'MinorAxis', 0.2), ... % 椭圆形状参数（相对于晶圆尺寸的比例）
-    'PLstarWidth', 3 ...                         % PL star线宽（1-4之间）
+    'FigureNumber', 100, ...                        % Figure number for plotting
+    'FolderPath', 'D:\Stephen\PL star\data', ...    % Folder containing .mat files
+    'PLstarEllipseYXRatio', 2.0, ...                % Y/X axis ratio (Y > X)
+    'PLstarEllipseScale', 0.25, ...                 % Scale relative to wafer size
+    'PLstarWidth', 3, ...                           % Width of PL star lines (1-4)
+    'PlotInMm', false ...                           % Plot in pixel units
 );
 
-% 确保输出文件夹存在
-if ~exist(CONFIG.OutputFolder, 'dir')
-    mkdir(CONFIG.OutputFolder);
-end
+% Validate PL star width is within required range
+CONFIG.PLstarWidth = max(1, min(4, CONFIG.PLstarWidth));
 
-% 获取所有.mat文件
+%% Process all .mat files in the folder
+% Get list of .mat files
 matFiles = dir(fullfile(CONFIG.FolderPath, '*.mat'));
+fprintf('Found %d .mat files to process\n', length(matFiles));
 
-% 检查是否找到文件
-if isempty(matFiles)
-    error('在指定文件夹中找不到.mat文件');
+% Process each file
+for i = 1:length(matFiles)
+    fprintf('Processing file %d/%d: %s\n', i, length(matFiles), matFiles(i).name);
+    
+    % Load data from .mat file
+    [waferData, waferInfo] = loadMatData(fullfile(CONFIG.FolderPath, matFiles(i).name));
+    
+    % Generate PL star maps
+    maps = generatePLStarMaps(waferData, waferInfo, CONFIG);
+    
+    % Calculate coordinates
+    coords = calculateCoordinates(waferInfo);
+    
+    % Plot maps
+    plotMaps(maps, coords, matFiles(i).name, CONFIG);
+    
+    % Save Mask and modified PL star data
+    saveMaskAndPLStar(maps, matFiles(i).name, CONFIG);
 end
 
-% 批量处理每个文件
-for fileIdx = 1:length(matFiles)
-    % 获取当前文件名
-    currentFile = matFiles(fileIdx).name;
-    fprintf('处理文件 %d/%d: %s\n', fileIdx, length(matFiles), currentFile);
-    
-    % 加载wafer数据
-    [waferData, waferInfo] = loadWaferData(fullfile(CONFIG.FolderPath, currentFile));
-    
-    % 更新配置参数
-    currentConfig = CONFIG;
-    currentConfig.WaferName = waferInfo.WaferName;
-    currentConfig.WaferSizeMm = waferInfo.WaferSizeMm;
-    
-    % 计算PL star中心点（在wafer右侧中部）
-    currentConfig.PLstarCenter = calculatePLStarCenter(waferData, currentConfig);
-    
-    % 计算椭圆尺寸参数（基于晶圆大小）
-    currentConfig.PLstarEllipse = calculatePLStarEllipse(currentConfig);
-    
-    % 生成PL star图
-    maps = generatePLStarMaps(waferData, currentConfig);
-    
-    % 计算坐标
-    coords = calculateCoordinates(currentConfig);
-    
-    % 绘制图形
-    plotMaps(maps, coords, currentConfig, currentFile);
-    
-    % 保存生成的Mask和修改后的PL star数据
-    saveOutputMaps(maps, waferInfo, currentFile, currentConfig);
-end
+fprintf('Processing complete\n');
 
-%% 加载Wafer数据的函数
-function [waferData, waferInfo] = loadWaferData(filePath)
-    % 从.mat文件加载数据
-    data = load(filePath);
+%% Data Loading Function
+function [waferData, waferInfo] = loadMatData(filePath)
+    % Load the .mat file
+    matData = load(filePath);
     
-    % 提取结构体中的字段
-    fieldNames = fieldnames(data);
-    if length(fieldNames) == 1
-        % 如果只有一个字段，直接使用它
-        mainField = fieldNames{1};
-        mainData = data.(mainField);
+    % Extract necessary information
+    % Note: This assumes specific structure in the .mat file, adjust field names as needed
+    waferInfo = struct();
+    
+    % Get wafer dimensions from the data
+    waferData = matData.waferData;  % Assuming waferData field exists
+    waferInfo.Shape = size(waferData);  % [height, width]
+    
+    % Extract wafer name if available, otherwise use filename
+    if isfield(matData, 'waferName')
+        waferInfo.Name = matData.waferName;
     else
-        % 尝试找到包含数据的主要字段
-        mainData = data;
+        [~, waferInfo.Name, ~] = fileparts(filePath);
     end
     
-    % 提取wafer数据和相关信息
-    if isstruct(mainData) && isfield(mainData, 'data')
-        % 数据存储在data字段中
-        waferData = mainData.data;
-        
-        % 提取wafer信息
-        waferInfo = struct();
-        if isfield(mainData, 'waferName')
-            waferInfo.WaferName = mainData.waferName;
-        else
-            % 使用文件名作为默认wafer名称
-            [~, waferInfo.WaferName, ~] = fileparts(filePath);
-        end
-        
-        if isfield(mainData, 'waferSize')
-            waferInfo.WaferSizeMm = mainData.waferSize;
-        else
-            % 假设方形wafer，尺寸是矩阵的大小乘以像素大小
-            waferInfo.WaferSizeMm = 150; % 默认150mm
-        end
-    elseif isnumeric(mainData)
-        % 数据直接是一个数值矩阵
-        waferData = mainData;
-        
-        % 创建默认wafer信息
-        waferInfo = struct();
-        [~, waferInfo.WaferName, ~] = fileparts(filePath);
-        waferInfo.WaferSizeMm = 150; % 默认150mm
-    else
-        error('无法从.mat文件中提取wafer数据');
-    end
-    
-    % 替换0值为NaN
+    % Replace 0 values with NaN
     waferData(waferData == 0) = nan;
     
-    % 如果不是APS1，则垂直翻转数据
-    if ~isequal(waferData, flipud(waferData))
-        waferData = flipud(waferData);
+    % Additional wafer information if available
+    if isfield(matData, 'pixelSizeMm')
+        waferInfo.PixelSizeMm = matData.pixelSizeMm;
+    else
+        waferInfo.PixelSizeMm = 0.1;  % Default value
     end
 end
 
-%% 计算PL Star中心点
-function center = calculatePLStarCenter(waferData, config)
-    % 获取数据尺寸
-    [height, width] = size(waferData);
+%% Calculate Plotting Coordinates
+function coords = calculateCoordinates(waferInfo)
+    % Get dimensions directly from wafer shape
+    height = waferInfo.Shape(1);
+    width = waferInfo.Shape(2);
     
-    % 计算wafer中心
+    % Calculate center coordinates
     centerX = width / 2;
     centerY = height / 2;
     
-    % 计算PL star中心位置（在右侧中部）
-    % 将中心向右移动到约3/4处
-    offsetX = width * 0.25; % 向右偏移，使得中心点在右侧
+    % Calculate pixel coordinates
+    xPixels = 1:width;
+    yPixels = 1:height;
     
-    center = struct(...
-        'X', centerX + offsetX, ...
-        'Y', centerY ... % 保持Y轴不变，位于中部
-    );
-end
-
-%% 计算PL Star椭圆参数
-function ellipse = calculatePLStarEllipse(config)
-    % 获取wafer尺寸（像素）
-    waferSizePixels = config.WaferSizeMm / config.PixelSizeMm;
-    
-    % 计算椭圆的主轴和次轴（确保Y轴长度大于X轴长度）
-    majorAxisLength = waferSizePixels * config.PLstarEllipseRatio.MajorAxis;
-    minorAxisLength = waferSizePixels * config.PLstarEllipseRatio.MinorAxis;
-    
-    % 如果不满足Y轴大于X轴的条件，则交换它们
-    if majorAxisLength <= minorAxisLength
-        temp = majorAxisLength;
-        majorAxisLength = minorAxisLength * 1.2; % 确保Y轴明显大于X轴
-        minorAxisLength = temp;
+    % Calculate mm coordinates if pixel size is available
+    if isfield(waferInfo, 'PixelSizeMm')
+        xMm = (xPixels - centerX - 0.5) * waferInfo.PixelSizeMm;
+        yMm = (yPixels - centerY - 0.5) * waferInfo.PixelSizeMm;
+    else
+        xMm = xPixels;
+        yMm = yPixels;
     end
     
-    % 构建椭圆参数
-    ellipse = struct(...
-        'MajorAxis', majorAxisLength, ... % Y轴方向（长轴）
-        'MinorAxis', minorAxisLength ...  % X轴方向（短轴）
-    );
+    coords = struct('Width', width, 'Height', height, ...
+                   'XPixels', xPixels, 'YPixels', yPixels, ...
+                   'XMm', xMm, 'YMm', yMm);
 end
 
-%% 生成和处理PL Star图像
-function maps = generatePLStarMaps(waferMap, config)
+%% Generate and Process PL Star Images
+function maps = generatePLStarMaps(waferData, waferInfo, config)
     maps = struct();
     
-    % 设置图像大小
-    [height, width] = size(waferMap);
+    % Get wafer dimensions
+    height = waferInfo.Shape(1);
+    width = waferInfo.Shape(2);
     
-    % 生成PL star掩码（使用椭圆边界）
-    maskMap = generatePLStar(height, width, config.PLstarCenter.X, config.PLstarCenter.Y, ...
-                          config.PLstarEllipse.MinorAxis, config.PLstarEllipse.MajorAxis, ...
-                          config.PLstarWidth, waferMap);
+    % Determine PL star center (right side, middle height)
+    centerX = round(width * 0.75);  % Position on the right side (3/4 of width)
+    centerY = round(height / 2);    % Middle height
     
-    % 模拟填充PL star结构
-    simulateMap = fillPLStarStructure(maskMap, waferMap);
+    % Calculate ellipse dimensions (Y > X)
+    minDimension = min(width, height);
+    ellipseScale = config.PLstarEllipseScale;
     
-    % 保存所有图
-    maps.RawMap = waferMap;
+    % Ensure Y axis is larger than X axis by using the ratio
+    ellipseMinorAxis = round(minDimension * ellipseScale); % X-axis (minor)
+    ellipseMajorAxis = round(ellipseMinorAxis * config.PLstarEllipseYXRatio); % Y-axis (major)
+    
+    % Ensure ellipse fits within wafer boundaries
+    ellipseMajorAxis = min(ellipseMajorAxis, height/2 - 10);
+    ellipseMinorAxis = min(ellipseMinorAxis, width/2 - 10);
+    
+    % Generate PL star mask using elliptical boundary
+    maskMap = generatePLStar(width, height, centerX, centerY, ...
+                          ellipseMinorAxis, ellipseMajorAxis, ...
+                          config.PLstarWidth, waferData);
+    
+    % Simulate filling PL star structure
+    simulateMap = fillPLStarStructure(maskMap, waferData);
+    
+    % Save all maps
+    maps.RawMap = waferData;
     maps.MaskMap = maskMap;
     maps.SimulateMap = simulateMap;
 end
 
-%% 计算绘图坐标
-function coords = calculateCoordinates(config)
-    % 计算尺寸和中心
-    dimX = size(config.PLstarCenter.X * 2, 1);
-    dimY = size(config.PLstarCenter.Y * 2, 1);
-    dim = max(dimX, dimY);
+%% Manually Generate PL Star with Elliptical Boundary
+function img = generatePLStar(width, height, centerX, centerY, ellipseMinor, ellipseMajor, lineWidth, waferImg)
+    % Initialize empty binary image
+    img = zeros(height, width, 'uint8');
     
-    waferCenter = struct('X', dim/2, 'Y', dim/2);
-    
-    % 计算毫米坐标
-    xMm = ((1:dim) - waferCenter.X - 0.5) * config.PixelSizeMm;
-    yMm = ((1:dim) - waferCenter.Y - 0.5) * config.PixelSizeMm;
-    
-    coords = struct('Dimension', dim, 'XMm', xMm, 'YMm', yMm);
-end
-
-%% 绘图函数
-function plotMaps(maps, coords, config, fileName)
-    % 创建新图形
-    figure(config.FigureNumber); clf;
-    set(gcf, 'Position', [100, 100, 1800, 400]);
-    
-    % 获取图名
-    mapNames = fieldnames(maps);
-    
-    % 初始化坐标轴数组
-    ax = zeros(1, length(mapNames));
-    
-    % 循环每个图进行绘制
-    for i = 1:length(mapNames)
-        % 获取当前图
-        mapName = mapNames{i};
-        currentMap = maps.(mapName);
-        
-        % 创建子图
-        if length(mapNames) > 3
-            ax(i) = subplot(2, 3, i);
-        else
-            ax(i) = subplot(1, length(mapNames), i);
-        end
-        
-        % 绘制图
-        if config.PlotInMm
-            imagesc(coords.XMm, coords.YMm, currentMap);
-        else
-            imagesc(currentMap);
-        end
-        
-        % 应用自定义函数（如果存在）
-        if exist('func_ChangeColorForNaN', 'file') == 2
-            func_ChangeColorForNaN(gca);
-        end
-        
-        if exist('func_GetDataStatCurrROI', 'file') == 2
-            func_GetDataStatCurrROI(gca, true, [5 95]);
-        end
-        
-        % 设置标签
-        if config.PlotInMm
-            xlabel('x(mm)');
-            ylabel('y(mm)');
-        else
-            xlabel('x(pixels)');
-            ylabel('y(pixels)');
-        end
-        
-        % 调整坐标轴并设置颜色图
-        axis tight; axis equal;
-        colormap('jet'); colorbar();
-        
-        % 设置坐标轴范围
-        if config.PlotInMm
-            axis([-config.WaferSizeMm/2 config.WaferSizeMm/2 -config.WaferSizeMm/2 config.WaferSizeMm/2]);
-        else
-            [height, width] = size(currentMap);
-            axis([0 width 0 height]);
-        end
-        
-        % 添加标题
-        title(sprintf('%s', mapName), 'fontsize', 7);
-        
-        % 确保正常的XY轴方向
-        axis xy;
-    end
-    
-    % 链接所有坐标轴
-    linkaxes(ax, 'xy');
-    
-    % 添加超级标题
-    if exist('suptitle', 'file') == 2
-        tt = {sprintf('Wafer: %s', config.WaferName), sprintf('File: %s', fileName)};
-        suptitle(tt, 10);
-    else
-        % MATLAB R2018b及以上版本使用sgtitle
-        sgtitle({sprintf('Wafer: %s', config.WaferName), sprintf('File: %s', fileName)}, 'FontSize', 10);
-    end
-    
-    % 保存图形
-    [~, nameOnly, ~] = fileparts(fileName);
-    saveas(gcf, fullfile(config.OutputFolder, [nameOnly, '_plot.png']));
-end
-
-%% 手动生成带椭圆边界的PL Star
-function img = generatePLStar(imageHeight, imageWidth, centerX, centerY, ellipseMinor, ellipseMajor, width, waferImg)
-    % 初始化空二进制图像
-    img = zeros(imageHeight, imageWidth, 'uint8');
-    
-    % 如果未提供wafer图像，则创建全黑图像
-    if nargin < 8 || isempty(waferImg)
-        waferImg = zeros(imageHeight, imageWidth, 'double');
-    else
-        waferImg = double(waferImg);
-    end
-    
-    % 定义PL star的6个点的角度（度）
+    % Define angles for the 6 points of the PL star (in degrees)
     angles = [0, 60, 120, 180, 240, 300];
     
-    % 转换为弧度
+    % Convert to radians
     anglesRad = deg2rad(angles);
     
-    % 根据非常长的线计算端点（比椭圆长得多）
-    % 这确保我们可以找到与椭圆的交点
-    maxLength = max(max(imageHeight, imageWidth), max(ellipseMajor, ellipseMinor) * 2);
+    % Calculate endpoints based on very long lines (much longer than the ellipse)
+    maxLength = max(width, height) * 2;
     
-    % 首先在所有6个方向上创建长线
+    % First create long lines in all 6 directions
     xTemp = zeros(1, length(angles));
     yTemp = zeros(1, length(angles));
     
@@ -315,75 +163,74 @@ function img = generatePLStar(imageHeight, imageWidth, centerX, centerY, ellipse
         yTemp(i) = round(centerY + maxLength * sin(anglesRad(i)));
     end
     
-    % 现在对每条线找到与椭圆的交点
+    % Now find intersection points with the ellipse for each line
     xEnd = zeros(1, length(angles));
     yEnd = zeros(1, length(angles));
     
     for i = 1:length(angles)
-        % 找到从中心到(xTemp,yTemp)的线与椭圆的交点
+        % Find intersection of the line from center to (xTemp,yTemp) with the ellipse
         [xIntersect, yIntersect] = lineEllipseIntersection(centerX, centerY, xTemp(i), yTemp(i), ...
                                                           centerX, centerY, ellipseMinor, ellipseMajor);
         
-        % 使用第一个交点（最接近中心）
+        % Use the first intersection point (closest to center)
         if ~isempty(xIntersect)
             xEnd(i) = round(xIntersect(1));
             yEnd(i) = round(yIntersect(1));
         else
-            % 如果未找到交点的备用（使用足够大的maxLength应该不会发生）
+            % Fallback if no intersection found
             xEnd(i) = xTemp(i);
             yEnd(i) = yTemp(i);
         end
     end
     
-    % 绘制每条线
-    width = max(1, min(4, width)); % 确保宽度在1-4之间
+    % Draw each line
     for i = 1:length(angles)
-        img = drawLine(img, waferImg, centerX, centerY, xEnd(i), yEnd(i), width);
+        img = drawLine(img, waferImg, centerX, centerY, xEnd(i), yEnd(i), lineWidth);
     end
 end
 
-%% 查找线和椭圆之间的交点
+%% Find intersection between a line and an ellipse
 function [xIntersect, yIntersect] = lineEllipseIntersection(x1, y1, x2, y2, cx, cy, a, b)
-    % 输入:
-    %   (x1,y1)和(x2,y2)是线的端点
-    %   (cx,cy)是椭圆的中心
-    %   a是半短轴（X方向）
-    %   b是半长轴（Y方向）
+    % Input:
+    %   (x1,y1) and (x2,y2) are the endpoints of the line
+    %   (cx,cy) is the center of the ellipse
+    %   a is the semi-minor axis (X direction)
+    %   b is the semi-major axis (Y direction)
     
-    % 平移以使椭圆以原点为中心
+    % Translate to make ellipse centered at origin
     x1 = x1 - cx;
     y1 = y1 - cy;
     x2 = x2 - cx;
     y2 = y2 - cy;
     
-    % 线的参数方程：(x,y) = (x1,y1) + t*((x2-x1),(y2-y1))
+    % Parametric equation of the line: (x,y) = (x1,y1) + t*((x2-x1),(y2-y1))
     dx = x2 - x1;
     dy = y2 - y1;
     
-    % 二次公式系数
+    % Quadratic formula coefficients
     A = (dx*dx)/(a*a) + (dy*dy)/(b*b);
     B = 2*((x1*dx)/(a*a) + (y1*dy)/(b*b));
     C = (x1*x1)/(a*a) + (y1*y1)/(b*b) - 1;
     
-    % 计算判别式
+    % Calculate discriminant
     discriminant = B*B - 4*A*C;
     
-    % 如果判别式为负，则无交点
+    % If discriminant is negative, no intersection
     if discriminant < 0
         xIntersect = [];
         yIntersect = [];
         return;
     end
     
-    % 计算交点参数
+    % Calculate intersection parameters
     t1 = (-B + sqrt(discriminant)) / (2*A);
     t2 = (-B - sqrt(discriminant)) / (2*A);
     
-    % 计算交点
+    % Calculate intersection points
     xIntersect = [x1 + t1*dx, x1 + t2*dx] + cx;
     yIntersect = [y1 + t1*dy, y1 + t2*dy] + cy;
     
-    % 根据与原始点(x1,y1)的距离排序
+    % Sort based on distance from original point (x1,y1)
     dist1 = (xIntersect(1) - (x1+cx))^2 + (yIntersect(1) - (y1+cy))^2;
     dist2 = (xIntersect(2) - (x1+cx))^2 + (yIntersect(2) - (y1+cy))^2;
     
@@ -393,27 +240,27 @@ function [xIntersect, yIntersect] = lineEllipseIntersection(x1, y1, x2, y2, cx, 
     end
 end
 
-%% 绘制线
+%% Draw Line
 function img = drawLine(img, waferImg, x1, y1, x2, y2, width)
-    % 使用Bresenham算法获取线上的点
+    % Get points on the line using Bresenhams algorithm
     [x, y] = bresenham(x1, y1, x2, y2);
     
-    % 绘制每个点
+    % Draw each point
     for i = 1:length(x)
-        % 检查点是否在图像边界内
+        % Check if point is within image boundaries
         if x(i) < 1 || x(i) > size(img, 2) || y(i) < 1 || y(i) > size(img, 1)
             continue;
         end
         
-        % 如果遇到NaN则停止绘制
+        % Stop drawing if NaN is encountered in wafer image
         if isnan(waferImg(y(i), x(i)))
             break;
         end
         
-        % 用指定宽度绘制线
+        % Draw line with specified width
         for dx = -floor(width/2):floor(width/2)
             for dy = -floor(width/2):floor(width/2)
-                % 计算新位置
+                % Calculate new position
                 xi = min(max(x(i) + dx, 1), size(img, 2));
                 yi = min(max(y(i) + dy, 1), size(img, 1));
                 
@@ -427,52 +274,52 @@ function img = drawLine(img, waferImg, x1, y1, x2, y2, width)
     end
 end
 
-%% Bresenham算法实现
+%% Bresenham Algorithm Implementation
 function [x, y] = bresenham(x1, y1, x2, y2)
-    % 舍入输入坐标以保持一致性
+    % Round input coordinates for consistency
     x1 = round(x1); 
     x2 = round(x2); 
     y1 = round(y1); 
     y2 = round(y2);
     
-    % 计算x和y方向的差异
+    % Calculate differences in x and y directions
     dx = abs(x2 - x1);
     dy = abs(y2 - y1);
     
-    % 确定x和y的增量方向
+    % Determine increment direction for x and y
     sx = sign(x2 - x1);
     sy = sign(y2 - y1);
     
-    % 初始化误差项
+    % Initialize error term
     err = dx - dy;
     
-    % 初始化空数组以存储线点
+    % Initialize empty arrays to store line points
     x = [];
     y = [];
     
-    % Bresenham算法的主循环
+    % Main loop of Bresenhams algorithm
     while true
-        % 存储当前点
+        % Store current point
         x = [x; x1];
         y = [y; y1];
         
-        % 检查是否到达终点
+        % Check if end point reached
         if (x1 == x2 && y1 == y2) || ...
            ((sx > 0 && x1 >= x2) && (sy > 0 && y1 >= y2)) || ...
            ((sx < 0 && x1 <= x2) && (sy < 0 && y1 <= y2))
             break;
         end
         
-        % 计算决策参数
+        % Calculate decision parameter
         e2 = 2 * err;
         
-        % 如有必要，更新误差项和x坐标
+        % Update error term and x coordinate if necessary
         if e2 > -dy
             err = err - dy;
             x1 = x1 + sx;
         end
         
-        % 如有必要，更新误差项和y坐标
+        % Update error term and y coordinate if necessary
         if e2 < dx
             err = err + dx;
             y1 = y1 + sy;
@@ -480,75 +327,165 @@ function [x, y] = bresenham(x1, y1, x2, y2)
     end
 end
 
-%% 填充PL Star结构
+%% Fill PL Star Structure
 function finalImg = fillPLStarStructure(masking, waferImg)
-    % 参数设置
+    % Parameter settings
     filterSize = 5;
     sigma = 1;
     thresholdLow = 0.0005 * 2;
     thresholdMed = 0.001 * 2;
     thresholdHigh = 0.003 * 2;
     
-    % 创建高斯滤波器
+    % Create Gaussian filter
     h = fspecial('gaussian', filterSize, sigma);
     backgroundSmoothed = imfilter(waferImg, h);
     nanMask = isnan(backgroundSmoothed);
     backgroundSmoothed(nanMask & ~isnan(waferImg)) = waferImg(nanMask & ~isnan(waferImg));
 
     diffImg = waferImg - backgroundSmoothed;
-    noiseMean = nanmean(diffImg(masking==1));
-    noiseStd = nanstd(diffImg(masking==1));
+    noiseMean = mean(diffImg(masking==1), 'omitnan');
+    noiseStd = std(diffImg(masking==1), 'omitnan');
 
-    % 打印噪声统计数据
-    fprintf('噪声均值: %f\n', noiseMean);
-    fprintf('噪声标准差: %f\n', noiseStd);
+    disp(['Noise Mean: ', num2str(noiseMean)]);
+    disp(['Noise Std: ', num2str(noiseStd)]);
     
-    % 复制原始图像
+    % Copy original image
     finalImg = waferImg;
     
-    % 查找mask等于1的点
+    % Find points where mask equals 1
     [rows, cols] = find(masking == 1);
     
-    % 处理每个点
+    % Process each point
     for i = 1:length(rows)
         r = rows(i);
         c = cols(i);
         backgroundValue = backgroundSmoothed(r, c);
         randProb = rand();
         
-        % 根据随机概率选择缩放因子
+        % Choose scaling factor based on random probability
         if randProb < 0.3
             scalingFactor = (1 - thresholdMed + (thresholdMed - thresholdLow) * rand());
         else
             scalingFactor = (1 - thresholdHigh + (thresholdHigh - thresholdMed) * rand());
         end
         
-        % 计算新值并添加噪声
+        % Calculate new value and add noise
         newValue = backgroundValue * scalingFactor;
         newValue = newValue + min(noiseStd, thresholdLow) * randn() * 0.1;
         finalImg(r, c) = newValue;
     end
 end
 
-%% 保存输出图
-function saveOutputMaps(maps, waferInfo, fileName, config)
-    % 创建输出文件名（保持与原始文件名的关联）
-    [~, nameOnly, ~] = fileparts(fileName);
-    outputFile = fullfile(config.OutputFolder, [nameOnly, '_PLStar.mat']);
+%% Plotting Function
+function plotMaps(maps, coords, fileName, config)
+    % Create new figure
+    figure(config.FigureNumber); clf;
+    set(gcf, 'Position', [100, 100, 1800, 400]);
     
-    % 准备要保存的数据
-    outputData = struct(...
-        'MaskMap', maps.MaskMap, ...
-        'SimulateMap', maps.SimulateMap, ...
-        'WaferName', waferInfo.WaferName, ...
-        'WaferSizeMm', waferInfo.WaferSizeMm, ...
-        'PLStarCenter', config.PLstarCenter, ...
-        'PLStarEllipse', config.PLstarEllipse, ...
-        'PLStarWidth', config.PLstarWidth, ...
-        'ProcessDate', datestr(now) ...
-    );
+    % Get map names
+    mapNames = fieldnames(maps);
     
-    % 保存到.mat文件
-    save(outputFile, 'outputData');
-    fprintf('已保存PL Star数据到: %s\n', outputFile);
+    % Initialize axes array
+    ax = zeros(1, length(mapNames));
+    
+    % Loop through each map for plotting
+    for i = 1:length(mapNames)
+        % Get current map
+        mapName = mapNames{i};
+        currentMap = maps.(mapName);
+        
+        % Create subplot
+        if length(mapNames) > 3
+            ax(i) = subplot(2, 3, i);
+        else
+            ax(i) = subplot(1, length(mapNames), i);
+        end
+        
+        % Plot map
+        if config.PlotInMm
+            imagesc(coords.XMm, coords.YMm, currentMap);
+        else
+            imagesc(currentMap);
+        end
+        
+        % Apply custom functions
+        func_ChangeColorForNaN(gca);
+        func_GetDataStatCurrROI(gca, true, [5 95]);
+        
+        % Set labels
+        if config.PlotInMm
+            xlabel('x(mm)');
+            ylabel('y(mm)');
+        else
+            xlabel('x(pixels)');
+            ylabel('y(pixels)');
+        end
+        
+        % Adjust axes and set colormap
+        axis tight; axis equal;
+        colormap('jet'); colorbar();
+        
+        % Set axis range
+        axis([1 coords.Width 1 coords.Height]);
+        
+        % Add title
+        title(sprintf('%s', mapName), 'fontsize', 7);
+        
+        % Ensure normal XY axis direction
+        axis xy;
+    end
+    
+    % Link all axes
+    linkaxes(ax, 'xy');
+    
+    % Add super title
+    tt = {sprintf('File: %s', fileName)};
+    suptitle(tt, 10);
+    
+    % Save figure if needed
+    saveas(gcf, [fileName, '_plot.png']);
+end
+
+%% Save Mask and PL Star data
+function saveMaskAndPLStar(maps, origFileName, config)
+    % Get file name without extension
+    [~, baseName, ~] = fileparts(origFileName);
+    
+    % Create output directory if it doesn't exist
+    outputDir = fullfile(config.FolderPath, 'PL_Star_Results');
+    if ~exist(outputDir, 'dir')
+        mkdir(outputDir);
+    end
+    
+    % Save Mask
+    maskFile = fullfile(outputDir, [baseName, '_Mask.mat']);
+    maskMap = maps.MaskMap;
+    save(maskFile, 'maskMap');
+    
+    % Save modified PL Star data
+    plStarFile = fullfile(outputDir, [baseName, '_PLStar.mat']);
+    modifiedMap = maps.SimulateMap;
+    save(plStarFile, 'modifiedMap');
+    
+    fprintf('Saved results for %s\n', baseName);
+end
+
+%% Helper function for displaying titles
+function suptitle(txt, fs)
+    if nargin < 2
+        fs = 12;
+    end
+    
+    % Add overall title
+    ax = axes('Position', [0, 0.95, 1, 0.05], 'Visible', 'off');
+    
+    if iscell(txt)
+        for i = 1:length(txt)
+            text(0.5, 1.1-i*0.1, txt{i}, 'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'top', 'FontSize', fs, 'FontWeight', 'bold');
+        end
+    else
+        text(0.5, 1, txt, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top', ...
+            'FontSize', fs, 'FontWeight', 'bold');
+    end
 end
