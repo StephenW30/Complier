@@ -1,170 +1,149 @@
-%% PL Star Analysis Script
+%% PL Star Analysis Script (Refactored)
 % Clean workspace and close all figures
 clear all; close all; clc;
-addpath('D:\stephen\git_Toolbox');  % Add toolbox path to MATLAB search path
+addpath('D:\stephen\git_Toolbox');  % Keep the toolbox path if needed
 
-%% Main Script
-% Set global constants and configuration parameters
+%% Configuration Parameters
 CONFIG = struct(...
-    'FigureNumber', 100, ...                       % Figure number for plotting
-    'FolderPath', 'D:\Stephen\PL star\data\Surface_Inspection(0)_2025-02-01-19-10-39_SuperFine1Res', ...
-    'HazeMapFile', 'P2cHaze_Grp[1]FT[MED]Res[100]ch[2]_03_Nppm', ...
-    'PixelSizeMm', 0.1, ...                        % Pixel size in mm
-    'WaferName', 'sc1 Wolfspeed', ...              % Wafer name
-    'WaferSizeMm', 150, ...                        % Wafer size in mm
-    'PlotInMm', false, ...                         % Whether to plot in mm units
-    'Resolution', 'SuperFine1', ...                % Resolution setting
-    'IsAPS1', false, ...                           % APS1 flag
-    'PLstarCenter', struct('X', 1400, 'Y', 750), ... % PL star center on right side of wafer
-    'PLstarEllipse', struct('MajorAxis', 200, 'MinorAxis', 100), ... % Elliptical shape parameters
-    'PLstarWidth', 3 ...                           % Width of the PL star lines
+    'FigureNumber', 100, ...                        % Figure number for plotting
+    'FolderPath', 'D:\Stephen\PL star\data', ...    % Folder containing .mat files
+    'PLstarEllipseYXRatio', 2.0, ...                % Y/X axis ratio (Y > X)
+    'PLstarEllipseScale', 0.25, ...                 % Scale relative to wafer size
+    'PLstarWidth', 3, ...                           % Width of PL star lines (1-4)
+    'PlotInMm', false ...                           % Plot in pixel units
 );
 
-% Load raw data
-rawMap = loadRawData(CONFIG);
+% Validate PL star width is within required range
+CONFIG.PLstarWidth = max(1, min(4, CONFIG.PLstarWidth));
 
-% Generate PL star maps
-maps = generatePLStarMaps(rawMap, CONFIG);
+%% Process all .mat files in the folder
+% Get list of .mat files
+matFiles = dir(fullfile(CONFIG.FolderPath, '*.mat'));
+fprintf('Found %d .mat files to process\n', length(matFiles));
 
-% Calculate coordinates
-coords = calculateCoordinates(CONFIG);
+% Process each file
+for i = 1:length(matFiles)
+    fprintf('Processing file %d/%d: %s\n', i, length(matFiles), matFiles(i).name);
+    
+    % Load data from .mat file
+    [waferData, waferInfo] = loadMatData(fullfile(CONFIG.FolderPath, matFiles(i).name));
+    
+    % Generate PL star maps
+    maps = generatePLStarMaps(waferData, waferInfo, CONFIG);
+    
+    % Calculate coordinates
+    coords = calculateCoordinates(waferInfo);
+    
+    % Plot maps
+    plotMaps(maps, coords, matFiles(i).name, CONFIG);
+    
+    % Save Mask and modified PL star data
+    saveMaskAndPLStar(maps, matFiles(i).name, CONFIG);
+end
 
-% Plot maps
-plotMaps(maps, coords, CONFIG);
+fprintf('Processing complete\n');
 
 %% Data Loading Function
-function rawData = loadRawData(config)
-    % Build complete file path
-    filePath = fullfile(config.FolderPath, [config.HazeMapFile, '.raw']);
+function [waferData, waferInfo] = loadMatData(filePath)
+    % Load the .mat file
+    matData = load(filePath);
     
-    % Load raw data
-    rawData = openraw(filePath);
+    % Extract necessary information
+    % Note: This assumes specific structure in the .mat file, adjust field names as needed
+    waferInfo = struct();
+    
+    % Get wafer dimensions from the data
+    waferData = matData.waferData;  % Assuming waferData field exists
+    waferInfo.Shape = size(waferData);  % [height, width]
+    
+    % Extract wafer name if available, otherwise use filename
+    if isfield(matData, 'waferName')
+        waferInfo.Name = matData.waferName;
+    else
+        [~, waferInfo.Name, ~] = fileparts(filePath);
+    end
     
     % Replace 0 values with NaN
-    rawData(rawData == 0) = nan;
+    waferData(waferData == 0) = nan;
     
-    % Flip data vertically if not APS1
-    if ~config.IsAPS1
-        rawData = flipud(rawData);
+    % Additional wafer information if available
+    if isfield(matData, 'pixelSizeMm')
+        waferInfo.PixelSizeMm = matData.pixelSizeMm;
+    else
+        waferInfo.PixelSizeMm = 0.1;  % Default value
     end
 end
 
+%% Calculate Plotting Coordinates
+function coords = calculateCoordinates(waferInfo)
+    % Get dimensions directly from wafer shape
+    height = waferInfo.Shape(1);
+    width = waferInfo.Shape(2);
+    
+    % Calculate center coordinates
+    centerX = width / 2;
+    centerY = height / 2;
+    
+    % Calculate pixel coordinates
+    xPixels = 1:width;
+    yPixels = 1:height;
+    
+    % Calculate mm coordinates if pixel size is available
+    if isfield(waferInfo, 'PixelSizeMm')
+        xMm = (xPixels - centerX - 0.5) * waferInfo.PixelSizeMm;
+        yMm = (yPixels - centerY - 0.5) * waferInfo.PixelSizeMm;
+    else
+        xMm = xPixels;
+        yMm = yPixels;
+    end
+    
+    coords = struct('Width', width, 'Height', height, ...
+                   'XPixels', xPixels, 'YPixels', yPixels, ...
+                   'XMm', xMm, 'YMm', yMm);
+end
+
 %% Generate and Process PL Star Images
-function maps = generatePLStarMaps(rawMap, config)
+function maps = generatePLStarMaps(waferData, waferInfo, config)
     maps = struct();
     
-    % Set image size
-    imageSize = config.WaferSizeMm / config.PixelSizeMm;
+    % Get wafer dimensions
+    height = waferInfo.Shape(1);
+    width = waferInfo.Shape(2);
+    
+    % Determine PL star center (right side, middle height)
+    centerX = round(width * 0.75);  % Position on the right side (3/4 of width)
+    centerY = round(height / 2);    % Middle height
+    
+    % Calculate ellipse dimensions (Y > X)
+    minDimension = min(width, height);
+    ellipseScale = config.PLstarEllipseScale;
+    
+    % Ensure Y axis is larger than X axis by using the ratio
+    ellipseMinorAxis = round(minDimension * ellipseScale); % X-axis (minor)
+    ellipseMajorAxis = round(ellipseMinorAxis * config.PLstarEllipseYXRatio); % Y-axis (major)
+    
+    % Ensure ellipse fits within wafer boundaries
+    ellipseMajorAxis = min(ellipseMajorAxis, height/2 - 10);
+    ellipseMinorAxis = min(ellipseMinorAxis, width/2 - 10);
     
     % Generate PL star mask using elliptical boundary
-    maskMap = generatePLStar(imageSize, config.PLstarCenter.X, config.PLstarCenter.Y, ...
-                          config.PLstarEllipse.MajorAxis, config.PLstarEllipse.MinorAxis, ...
-                          config.PLstarWidth, rawMap);
+    maskMap = generatePLStar(width, height, centerX, centerY, ...
+                          ellipseMinorAxis, ellipseMajorAxis, ...
+                          config.PLstarWidth, waferData);
     
     % Simulate filling PL star structure
-    simulateMap = fillPLStarStructure(maskMap, rawMap);
+    simulateMap = fillPLStarStructure(maskMap, waferData);
     
     % Save all maps
-    maps.RawMap = rawMap;
+    maps.RawMap = waferData;
     maps.MaskMap = maskMap;
     maps.SimulateMap = simulateMap;
 end
 
-%% Calculate Plotting Coordinates
-function coords = calculateCoordinates(config)
-    % Calculate dimensions and center
-    dim = config.WaferSizeMm / config.PixelSizeMm;
-    waferCenter = struct('X', dim/2, 'Y', dim/2);
-    
-    % Calculate mm coordinates
-    xMm = ((1:dim) - waferCenter.X - 0.5) * config.PixelSizeMm;
-    yMm = ((1:dim) - waferCenter.Y - 0.5) * config.PixelSizeMm;
-    
-    coords = struct('Dimension', dim, 'XMm', xMm, 'YMm', yMm);
-end
-
-%% Plotting Function
-function plotMaps(maps, coords, config)
-    % Create new figure
-    figure(config.FigureNumber); clf;
-    set(gcf, 'Position', [100, 100, 1800, 400]);
-    
-    % Get map names
-    mapNames = fieldnames(maps);
-    
-    % Initialize axes array
-    ax = zeros(1, length(mapNames));
-    
-    % Loop through each map for plotting
-    for i = 1:length(mapNames)
-        % Get current map
-        mapName = mapNames{i};
-        currentMap = maps.(mapName);
-        
-        % Create subplot
-        if length(mapNames) > 3
-            ax(i) = subplot(2, 3, i);
-        else
-            ax(i) = subplot(1, length(mapNames), i);
-        end
-        
-        % Plot map
-        if config.PlotInMm
-            imagesc(coords.XMm, coords.YMm, currentMap);
-        else
-            imagesc(currentMap);
-        end
-        
-        % Apply custom functions
-        func_ChangeColorForNaN(gca);
-        func_GetDataStatCurrROI(gca, true, [5 95]);
-        
-        % Set labels
-        if config.PlotInMm
-            xlabel('x(mm)');
-            ylabel('y(mm)');
-        else
-            xlabel('x(pixels)');
-            ylabel('y(pixels)');
-        end
-        
-        % Adjust axes and set colormap
-        axis tight; axis equal;
-        colormap('jet'); colorbar();
-        
-        % Set axis range
-        if config.PlotInMm
-            axis([-config.WaferSizeMm/2 config.WaferSizeMm/2 -config.WaferSizeMm/2 config.WaferSizeMm/2]);
-        else
-            axis([0 coords.Dimension 0 coords.Dimension]);
-        end
-        
-        % Add title
-        title(sprintf('%s', mapName), 'fontsize', 7);
-        
-        % Ensure normal XY axis direction
-        axis xy;
-    end
-    
-    % Link all axes
-    linkaxes(ax, 'xy');
-    
-    % Add super title
-    tt = {sprintf('%s', config.FolderPath), sprintf('%s', config.HazeMapFile)};
-    suptitle(tt, 10);
-end
-
 %% Manually Generate PL Star with Elliptical Boundary
-function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipseMinor, width, waferImg)
+function img = generatePLStar(width, height, centerX, centerY, ellipseMinor, ellipseMajor, lineWidth, waferImg)
     % Initialize empty binary image
-    img = zeros(imageSize, imageSize, 'uint8');
-    
-    % If wafer image not provided, create all-black image
-    if nargin < 7 || isempty(waferImg)
-        waferImg = zeros(imageSize, imageSize, 'double');
-    else
-        waferImg = double(waferImg);
-    end
+    img = zeros(height, width, 'uint8');
     
     % Define angles for the 6 points of the PL star (in degrees)
     angles = [0, 60, 120, 180, 240, 300];
@@ -173,8 +152,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     anglesRad = deg2rad(angles);
     
     % Calculate endpoints based on very long lines (much longer than the ellipse)
-    % This ensures we can find intersection with ellipse
-    maxLength = max(imageSize, max(ellipseMajor, ellipseMinor) * 2);
+    maxLength = max(width, height) * 2;
     
     % First create long lines in all 6 directions
     xTemp = zeros(1, length(angles));
@@ -199,7 +177,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
             xEnd(i) = round(xIntersect(1));
             yEnd(i) = round(yIntersect(1));
         else
-            % Fallback if no intersection found (shouldn't happen with sufficiently large maxLength)
+            % Fallback if no intersection found
             xEnd(i) = xTemp(i);
             yEnd(i) = yTemp(i);
         end
@@ -207,7 +185,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     
     % Draw each line
     for i = 1:length(angles)
-        img = drawLine(img, waferImg, centerX, centerY, xEnd(i), yEnd(i), width);
+        img = drawLine(img, waferImg, centerX, centerY, xEnd(i), yEnd(i), lineWidth);
     end
 end
 
@@ -274,7 +252,7 @@ function img = drawLine(img, waferImg, x1, y1, x2, y2, width)
             continue;
         end
         
-        % Stop drawing if NaN is encountered
+        % Stop drawing if NaN is encountered in wafer image
         if isnan(waferImg(y(i), x(i)))
             break;
         end
@@ -350,11 +328,10 @@ function [x, y] = bresenham(x1, y1, x2, y2)
 end
 
 %% Fill PL Star Structure
-function finalImg = fillPLStarStructure(masking, waferImg, config)
+function finalImg = fillPLStarStructure(masking, waferImg)
     % Parameter settings
     filterSize = 5;
     sigma = 1;
-    % noiseLevel = 0.0002;
     thresholdLow = 0.0005 * 2;
     thresholdMed = 0.001 * 2;
     thresholdHigh = 0.003 * 2;
@@ -366,11 +343,11 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
     backgroundSmoothed(nanMask & ~isnan(waferImg)) = waferImg(nanMask & ~isnan(waferImg));
 
     diffImg = waferImg - backgroundSmoothed;
-    noiseMean = mean(diffImg(masking==1));
-    noiseStd = std(diffImg(masking==1));
+    noiseMean = mean(diffImg(masking==1), 'omitnan');
+    noiseStd = std(diffImg(masking==1), 'omitnan');
 
-    disp(noiseMean);
-    disp(noiseStd);
+    disp(['Noise Mean: ', num2str(noiseMean)]);
+    disp(['Noise Std: ', num2str(noiseStd)]);
     
     % Copy original image
     finalImg = waferImg;
@@ -396,5 +373,119 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
         newValue = backgroundValue * scalingFactor;
         newValue = newValue + min(noiseStd, thresholdLow) * randn() * 0.1;
         finalImg(r, c) = newValue;
+    end
+end
+
+%% Plotting Function
+function plotMaps(maps, coords, fileName, config)
+    % Create new figure
+    figure(config.FigureNumber); clf;
+    set(gcf, 'Position', [100, 100, 1800, 400]);
+    
+    % Get map names
+    mapNames = fieldnames(maps);
+    
+    % Initialize axes array
+    ax = zeros(1, length(mapNames));
+    
+    % Loop through each map for plotting
+    for i = 1:length(mapNames)
+        % Get current map
+        mapName = mapNames{i};
+        currentMap = maps.(mapName);
+        
+        % Create subplot
+        if length(mapNames) > 3
+            ax(i) = subplot(2, 3, i);
+        else
+            ax(i) = subplot(1, length(mapNames), i);
+        end
+        
+        % Plot map
+        if config.PlotInMm
+            imagesc(coords.XMm, coords.YMm, currentMap);
+        else
+            imagesc(currentMap);
+        end
+        
+        % Apply custom functions
+        func_ChangeColorForNaN(gca);
+        func_GetDataStatCurrROI(gca, true, [5 95]);
+        
+        % Set labels
+        if config.PlotInMm
+            xlabel('x(mm)');
+            ylabel('y(mm)');
+        else
+            xlabel('x(pixels)');
+            ylabel('y(pixels)');
+        end
+        
+        % Adjust axes and set colormap
+        axis tight; axis equal;
+        colormap('jet'); colorbar();
+        
+        % Set axis range
+        axis([1 coords.Width 1 coords.Height]);
+        
+        % Add title
+        title(sprintf('%s', mapName), 'fontsize', 7);
+        
+        % Ensure normal XY axis direction
+        axis xy;
+    end
+    
+    % Link all axes
+    linkaxes(ax, 'xy');
+    
+    % Add super title
+    tt = {sprintf('File: %s', fileName)};
+    suptitle(tt, 10);
+    
+    % Save figure if needed
+    saveas(gcf, [fileName, '_plot.png']);
+end
+
+%% Save Mask and PL Star data
+function saveMaskAndPLStar(maps, origFileName, config)
+    % Get file name without extension
+    [~, baseName, ~] = fileparts(origFileName);
+    
+    % Create output directory if it doesn't exist
+    outputDir = fullfile(config.FolderPath, 'PL_Star_Results');
+    if ~exist(outputDir, 'dir')
+        mkdir(outputDir);
+    end
+    
+    % Save Mask
+    maskFile = fullfile(outputDir, [baseName, '_Mask.mat']);
+    maskMap = maps.MaskMap;
+    save(maskFile, 'maskMap');
+    
+    % Save modified PL Star data
+    plStarFile = fullfile(outputDir, [baseName, '_PLStar.mat']);
+    modifiedMap = maps.SimulateMap;
+    save(plStarFile, 'modifiedMap');
+    
+    fprintf('Saved results for %s\n', baseName);
+end
+
+%% Helper function for displaying titles
+function suptitle(txt, fs)
+    if nargin < 2
+        fs = 12;
+    end
+    
+    % Add overall title
+    ax = axes('Position', [0, 0.95, 1, 0.05], 'Visible', 'off');
+    
+    if iscell(txt)
+        for i = 1:length(txt)
+            text(0.5, 1.1-i*0.1, txt{i}, 'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'top', 'FontSize', fs, 'FontWeight', 'bold');
+        end
+    else
+        text(0.5, 1, txt, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top', ...
+            'FontSize', fs, 'FontWeight', 'bold');
     end
 end
