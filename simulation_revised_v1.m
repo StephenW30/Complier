@@ -15,9 +15,9 @@ CONFIG = struct(...
     'PlotInMm', false, ...                         % Whether to plot in mm units
     'Resolution', 'SuperFine1', ...                % Resolution setting
     'IsAPS1', false, ...                           % APS1 flag
-    'PLstarCenter', struct('X', 1100, 'Y', 750), ... % PL star center on right side of wafer
-    'PLstarEllipse', struct('MajorAxis', 150, 'MinorAxis', 80), ... % Elliptical shape parameters
-    'PLstarWidth', 5 ...                           % Width of the PL star lines
+    'PLstarCenter', struct('X', 1400, 'Y', 750), ... % PL star center on right side of wafer
+    'PLstarEllipse', struct('MajorAxis', 200, 'MinorAxis', 100), ... % Elliptical shape parameters
+    'PLstarWidth', 3 ...                           % Width of the PL star lines
 );
 
 % Load raw data
@@ -87,6 +87,7 @@ end
 function plotMaps(maps, coords, config)
     % Create new figure
     figure(config.FigureNumber); clf;
+    set(gcf, 'Position', [100, 100, 1800, 400]);
     
     % Get map names
     mapNames = fieldnames(maps);
@@ -190,7 +191,7 @@ function img = generatePLStar(imageSize, centerX, centerY, ellipseMajor, ellipse
     
     for i = 1:length(angles)
         % Find intersection of the line from center to (xTemp,yTemp) with the ellipse
-        [xIntersect, yIntersect] = lineEllipseIntersection(centerX, centerY, xTemp(i), yTemp(i), 
+        [xIntersect, yIntersect] = lineEllipseIntersection(centerX, centerY, xTemp(i), yTemp(i), ...
                                                           centerX, centerY, ellipseMinor, ellipseMajor);
         
         % Use the first intersection point (closest to center)
@@ -353,10 +354,10 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
     % Parameter settings
     filterSize = 5;
     sigma = 1;
-    noiseLevel = 0.0002;
-    thresholdLow = 0.0005;
-    thresholdMed = 0.001;
-    thresholdHigh = 0.003;
+    % noiseLevel = 0.0002;
+    thresholdLow = 0.0005 * 2;
+    thresholdMed = 0.001 * 2;
+    thresholdHigh = 0.003 * 2;
     
     % Create Gaussian filter
     h = fspecial('gaussian', filterSize, sigma);
@@ -384,7 +385,7 @@ function finalImg = fillPLStarStructure(masking, waferImg, config)
         
         % Calculate new value and add noise
         newValue = backgroundValue * scalingFactor;
-        newValue = newValue + noiseLevel * (rand()-0.5);
+        newValue = newValue + min(noiseStd, threshold) * randn() * 0.1;
         finalImg(r, c) = newValue;
     end
 end
