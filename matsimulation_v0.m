@@ -552,3 +552,66 @@ function finalImg = fillPLStarStructure(masking, waferImg)
         finalImg(r, c) = newValue;
     end
 end
+
+
+%% Generate and Process PL Star Images
+function maps = generatePLStarMaps(waferData, waferInfo, config)
+    maps = struct();
+    
+    % Get wafer dimensions
+    height = waferInfo.Shape(1);
+    width = waferInfo.Shape(2);
+    
+    % Determine base PL star center (right side, middle height)
+    baseCenterX = round(width * 0.75);  % Position on the right side (3/4 of width)
+    baseCenterY = round(height / 2);    % Middle height
+    
+    % Add random variation to the center position
+    xVariation = round(width * config.PLstarCenterVariationX * (2*rand()-1));  % Random between -10% and +10%
+    yVariation = round(height * config.PLstarCenterVariationY * (2*rand()-1)); % Random between -10% and +10%
+    
+    centerX = max(1, min(width, baseCenterX + xVariation));    % Ensure within image boundaries
+    centerY = max(1, min(height, baseCenterY + yVariation));   % Ensure within image boundaries
+    
+    % Calculate base ellipse dimensions
+    minDimension = min(width, height);
+    
+    % Add random variation to ellipse scale
+    scaleVariation = config.PLstarEllipseScaleVariation * (2*rand()-1);  % Random between -var and +var
+    ellipseScale = max(0.1, min(0.4, config.PLstarEllipseScale + scaleVariation));
+    
+    % Ensure Y axis is larger than X axis by using the ratio
+    ellipseMinorAxis = round(minDimension * ellipseScale); % X-axis (minor)
+    ellipseMajorAxis = round(ellipseMinorAxis * config.PLstarEllipseYXRatio); % Y-axis (major)
+    
+    % Add slight randomness to the ratio as well
+    ratioVariation = 0.3 * rand(); // Slight variation in ratio
+    ellipseMajorAxis = round(ellipseMajorAxis * (1 + ratioVariation));
+    
+    % Ensure ellipse fits within wafer boundaries
+    ellipseMajorAxis = min(ellipseMajorAxis, height/2 - 10);
+    ellipseMinorAxis = min(ellipseMinorAxis, width/2 - 10);
+    
+    % Generate PL star mask using elliptical boundary
+    maskMap = generatePLStar(width, height, centerX, centerY, ...
+                          ellipseMinorAxis, ellipseMajorAxis, ...
+                          config.PLstarWidth, waferData);
+    
+    % Simulate filling PL star structure
+    simulateMap = fillPLStarStructure(maskMap, waferData);
+    
+    % Save all maps
+    maps.RawMap = waferData;
+    maps.MaskMap = maskMap;
+    maps.SimulateMap = simulateMap;
+    
+    % Store metadata for reference
+    maps.Metadata = struct(...
+        'CenterX', centerX, ...
+        'CenterY', centerY, ...
+        'EllipseMinorAxis', ellipseMinorAxis, ...
+        'EllipseMajorAxis', ellipseMajorAxis, ...
+        'Scale', ellipseScale, ...
+        'Width', config.PLstarWidth ...
+    );
+end
