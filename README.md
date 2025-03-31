@@ -285,3 +285,26 @@ Here's your completed table in a format consistent with your existing entries:
 | **SegFormer**   | Transformer-based encoder with lightweight MLP decoder; integrates multi-scale transformer features effectively; excellent balance between performance and efficiency.            | Flexible input sizes (arbitrary input through padding)    | Yes              | Not chosen due to limited timeframe and considerable training consumption. Ideal when high efficiency with good accuracy is required but less suited for extremely thin defect detection.|
 
 This format is consistent with your original entries, clearly highlighting each model's architecture and suitability for your PL star segmentation task.
+
+
+
+Tasks Completed:
+
+MATLAB Code Refactoring for PL Star Generation
+
+Transformed the original code from single wafer processing to batch wafer simulation capability
+Implemented automatic adjustment of PL star position and dimensions based on discussions with apps team
+Identified several bugs that need future fixes
+
+
+Literature Review on Shape Prior Integration in Neural Networks
+
+Studied papers focused on incorporating shape priors into neural networks for segmentation tasks
+Analyzed the SPM (Shape Prior Module) approach and its potential application to our work
+
+
+Camouflage Object Detection Research
+
+Analyzed relevant papers and datasets for camouflage object detection
+Identified several SOTA models with features similar to our task requirements
+Evaluated potential applicability to our specific detection challenges
