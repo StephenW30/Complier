@@ -5,11 +5,11 @@ import torch.nn.init as init
 import math
 
 class WeightInitializer:
-    """权重初始化类"""
+    """Weight initialization class"""
     
     @staticmethod
     def he_normal_init(m):
-        """He正态分布初始化（适用于ReLU激活）"""
+        """He normal initialization (suitable for ReLU activation)"""
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             if m.bias is not None:
@@ -24,7 +24,7 @@ class WeightInitializer:
     
     @staticmethod
     def he_uniform_init(m):
-        """He均匀分布初始化"""
+        """He uniform initialization"""
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             init.kaiming_uniform_(m.weight, mode='fan_out', nonlinearity='relu')
             if m.bias is not None:
@@ -39,7 +39,7 @@ class WeightInitializer:
     
     @staticmethod
     def xavier_normal_init(m):
-        """Xavier正态分布初始化（适用于Sigmoid/Tanh激活）"""
+        """Xavier normal initialization (suitable for Sigmoid/Tanh activation)"""
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             init.xavier_normal_(m.weight)
             if m.bias is not None:
@@ -54,7 +54,7 @@ class WeightInitializer:
     
     @staticmethod
     def xavier_uniform_init(m):
-        """Xavier均匀分布初始化"""
+        """Xavier uniform initialization"""
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             init.xavier_uniform_(m.weight)
             if m.bias is not None:
@@ -69,7 +69,7 @@ class WeightInitializer:
     
     @staticmethod
     def orthogonal_init(m):
-        """正交初始化"""
+        """Orthogonal initialization"""
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
             init.orthogonal_(m.weight)
             if m.bias is not None:
@@ -85,15 +85,15 @@ class WeightInitializer:
     @staticmethod
     def custom_unet_init(m):
         """
-        针对U-Net的自定义初始化
-        结合多种策略以获得更好的训练稳定性
+        Custom initialization for U-Net
+        Combines multiple strategies for better training stability
         """
         if isinstance(m, nn.Conv2d):
-            # 对于卷积层使用He初始化
+            # Use He initialization for convolutional layers
             fan_in = m.weight.size(1) * m.weight.size(2) * m.weight.size(3)
             fan_out = m.weight.size(0) * m.weight.size(2) * m.weight.size(3)
             
-            # 使用改进的He初始化
+            # Use improved He initialization
             std = math.sqrt(2.0 / fan_in)
             init.normal_(m.weight, 0, std)
             
@@ -101,7 +101,7 @@ class WeightInitializer:
                 init.constant_(m.bias, 0)
                 
         elif isinstance(m, nn.ConvTranspose2d):
-            # 对于转置卷积，使用特殊初始化以避免棋盘效应
+            # Special initialization for transposed convolution to avoid checkerboard artifacts
             fan_in = m.weight.size(1) * m.weight.size(2) * m.weight.size(3)
             std = math.sqrt(1.0 / fan_in)
             init.normal_(m.weight, 0, std)
@@ -110,12 +110,12 @@ class WeightInitializer:
                 init.constant_(m.bias, 0)
                 
         elif isinstance(m, nn.BatchNorm2d):
-            # BatchNorm层标准初始化
+            # Standard initialization for BatchNorm layers
             init.constant_(m.weight, 1)
             init.constant_(m.bias, 0)
             
         elif isinstance(m, nn.Linear):
-            # 线性层使用Xavier初始化
+            # Use Xavier initialization for linear layers
             init.xavier_normal_(m.weight)
             if m.bias is not None:
                 init.constant_(m.bias, 0)
@@ -123,10 +123,10 @@ class WeightInitializer:
     @staticmethod
     def attention_specific_init(m):
         """
-        针对注意力机制的特殊初始化
+        Special initialization for attention mechanisms
         """
         if hasattr(m, '__class__') and 'Attention' in m.__class__.__name__:
-            # 注意力层的权重应该较小，避免过度关注
+            # Attention layer weights should be small to avoid over-focusing
             for param in m.parameters():
                 if param.dim() > 1:
                     init.xavier_uniform_(param, gain=0.1)
@@ -135,13 +135,13 @@ class WeightInitializer:
 
 def get_initializer(init_type='he_normal'):
     """
-    获取初始化函数
+    Get initialization function
     
     Args:
-        init_type (str): 初始化类型
+        init_type (str): Initialization type
     
     Returns:
-        function: 初始化函数
+        function: Initialization function
     """
     initializers = {
         'he_normal': WeightInitializer.he_normal_init,
@@ -153,46 +153,46 @@ def get_initializer(init_type='he_normal'):
     }
     
     if init_type not in initializers:
-        raise ValueError(f"不支持的初始化类型: {init_type}. 支持的类型: {list(initializers.keys())}")
+        raise ValueError(f"Unsupported initialization type: {init_type}. Supported types: {list(initializers.keys())}")
     
     return initializers[init_type]
 
 def initialize_model(model, init_type='he_normal', verbose=True):
     """
-    初始化整个模型的权重
+    Initialize weights for the entire model
     
     Args:
-        model (nn.Module): 待初始化的模型
-        init_type (str): 初始化类型
-        verbose (bool): 是否打印初始化信息
+        model (nn.Module): Model to be initialized
+        init_type (str): Initialization type
+        verbose (bool): Whether to print initialization information
     
     Returns:
-        nn.Module: 初始化后的模型
+        nn.Module: Model after initialization
     """
     initializer = get_initializer(init_type)
     
-    # 计算初始化前后的权重统计
+    # Calculate weight statistics before and after initialization
     if verbose:
-        print(f"使用 {init_type} 初始化模型权重...")
+        print(f"Initializing model weights using {init_type}...")
         
-        # 统计模型参数
+        # Count model parameters
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         
-        print(f"模型总参数: {total_params:,}")
-        print(f"可训练参数: {trainable_params:,}")
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
     
-    # 应用初始化
+    # Apply initialization
     model.apply(initializer)
     
-    # 对注意力层进行特殊初始化
+    # Special initialization for attention layers
     model.apply(WeightInitializer.attention_specific_init)
     
     if verbose:
-        # 打印初始化后的权重统计
-        print("权重初始化完成!")
+        # Print weight statistics after initialization
+        print("Weight initialization completed!")
         
-        # 检查一些关键层的权重范围
+        # Check weight ranges of some key layers
         conv_weights = []
         bn_weights = []
         
@@ -204,12 +204,12 @@ def initialize_model(model, init_type='he_normal', verbose=True):
         
         if conv_weights:
             conv_weights = torch.tensor(conv_weights)
-            print(f"卷积层权重范围: [{conv_weights.min():.4f}, {conv_weights.max():.4f}], "
-                  f"均值: {conv_weights.mean():.4f}, 标准差: {conv_weights.std():.4f}")
+            print(f"Conv layer weight range: [{conv_weights.min():.4f}, {conv_weights.max():.4f}], "
+                  f"mean: {conv_weights.mean():.4f}, std: {conv_weights.std():.4f}")
         
         if bn_weights:
             bn_weights = torch.tensor(bn_weights)
-            print(f"BatchNorm权重范围: [{bn_weights.min():.4f}, {bn_weights.max():.4f}], "
-                  f"均值: {bn_weights.mean():.4f}, 标准差: {bn_weights.std():.4f}")
+            print(f"BatchNorm weight range: [{bn_weights.min():.4f}, {bn_weights.max():.4f}], "
+                  f"mean: {bn_weights.mean():.4f}, std: {bn_weights.std():.4f}")
     
     return model
