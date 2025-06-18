@@ -260,3 +260,26 @@ def visualize_pl_star_detection_with_star_lines(mask, centers, kept_lines, skel,
 
 
 
+    # Reverse lookup from center with gap tolerance
+    overlay2 = cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2BGR)
+    for cx, cy in centers:
+        for angle in [0, 60, 120, 180, 240, 300]:
+            rad = math.radians(angle)
+            gap_count = 0
+            max_gap = 5  # 容许最多连续5像素中断
+            for r in range(0, 300):
+                x = int(cx + r * math.cos(rad))
+                y = int(cy + r * math.sin(rad))
+                if 0 <= x < mask.shape[1] and 0 <= y < mask.shape[0]:
+                    if mask[y, x] > 0:
+                        overlay2[y, x] = [0, 255, 255]  # yellow
+                        gap_count = 0  # reset
+                    else:
+                        gap_count += 1
+                        if gap_count > max_gap:
+                            break  # too many gaps → stop
+                else:
+                    break
+
+
+
