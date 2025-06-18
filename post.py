@@ -417,3 +417,175 @@ def visualize_pl_star_detection_with_star_lines(mask, centers, kept_lines, skel,
 
 
 
+
+
+def detect_pl_stars_debug(binary_mask,
+                          hough_thresh=50, min_len=10, max_gap=3,
+                          angle_tol=15, cluster_eps=10, cluster_min_pts=3):
+    """
+    Detect PL star centers and lines from a binary mask.
+
+    Parameters:
+        binary_mask: np.ndarray
+            Input binary image where 1 represents predicted star arms.
+        hough_thresh: int
+            Threshold for HoughLinesP voting.
+        min_len: int
+            Minimum length of line segments.
+        max_gap: int
+            Maximum gap allowed to link line segments.
+        angle_tol: float
+            Allowed angular deviation from canonical directions (0,60,120).
+        cluster_eps: float
+            DBSCAN epsilon for intersection point clustering.
+        cluster_min_pts: int
+            DBSCAN min_samples.
+
+    Returns:
+        centers: List of detected (x, y) center points.
+        kept: List of accepted lines after angle filtering.
+        closed: Image after morphological closing.
+        skel: Skeletonized image (thinned).
+    """
+    # Apply morphological closing to bridge small gaps
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    closed = cv2.morphologyEx(binary_mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+
+    # Skeletonize the mask to get single-pixel-width lines
+    skel = skeletonize(closed > 0).astype(np.uint8) * 255
+
+    # Use probabilistic Hough transform to detect line segments
+    lines_p = cv2.HoughLinesP(skel, rho=1, theta=np.pi/180,
+                              threshold=hough_thresh,
+                              minLineLength=min_len,
+                              maxLineGap=max_gap)
+
+    kept = []
+    if lines_p is not None:
+        # Define allowed directions (modulo 180 to avoid symmetric duplicate)
+        canonical = np.array([0.0, 60.0, 120.0])
+        for x1, y1, x2, y2 in lines_p[:, 0, :]:
+            ang = (math.degrees(math.atan2(y2 - y1, x2 - x1)) + 360) % 180
+            # Find closest canonical direction
+            diffs = np.abs(ang - canonical)
+            diffs = np.minimum(diffs, 180 - diffs)
+            idx = int(np.argmin(diffs))
+            if diffs[idx] < angle_tol:
+                kept.append((x1, y1, x2, y2, float(canonical[idx])))
+
+    # Compute intersection points from filtered lines
+    pts, dir_pairs = [], []
+    lines_eq = []
+    for x1, y1, x2, y2, ang0 in kept:
+        a, b = y2 - y1, x1 - x2
+        c = x2 * y1 - x1 * y2
+        lines_eq.append((a, b, c, ang0))
+    for i in range(len(lines_eq)):
+        a1, b1, c1, d1 = lines_eq[i]
+        for j in range(i + 1, len(lines_eq)):
+            a2, b2, c2, d2 = lines_eq[j]
+            D = a1 * b2 - a2 * b1
+            if abs(D) < 1e-6:
+                continue  # parallel
+            x = (b1 * c2 - b2 * c1) / D
+            y = (c1 * a2 - c2 * a1) / D
+            pts.append([x, y])
+            dir_pairs.append((d1, d2))
+
+    # Cluster intersection points to find likely centers
+    centers = []
+    if pts:
+        pts_arr = np.array(pts)
+        clustering = DBSCAN(eps=cluster_eps, min_samples=cluster_min_pts).fit(pts_arr)
+        for lbl in set(clustering.labels_):
+            if lbl < 0:
+                continue  # noise
+            mask_lbl = clustering.labels_ == lbl
+            dirs = set()
+            for k, pair in enumerate(dir_pairs):
+                if mask_lbl[k]:
+                    dirs.update(pair)
+            if len(dirs) >= 3:
+                centroid = pts_arr[mask_lbl].mean(axis=0)
+                centers.append((centroid[0], centroid[1]))
+
+    # Print result summary
+    if centers:
+        print(f"[INFO] Detected {len(centers)} PL Star center(s):")
+        for i, (x, y) in enumerate(centers):
+            print(f"  → Center {i+1}: (x = {x:.1f}, y = {y:.1f})")
+    else:
+        print("[INFO] No PL Star centers detected.")
+
+    return centers, kept, closed, skel
+
+
+def visualize_pl_star_detection_with_star_lines(mask, centers, kept_lines, skel, title="PL Star Detection"):
+    """
+    Visualize the detection result: original mask, skeleton, detected lines & centers,
+    and the recovered lines from detected centers with tolerant gaps.
+
+    Parameters:
+        mask: np.ndarray
+            Original binary mask (input to the detector).
+        centers: list of (x, y)
+            Detected center points of PL stars.
+        kept_lines: list of lines
+            Line segments after angle filtering.
+        skel: np.ndarray
+            Skeleton image.
+        title: str
+            Plot title.
+    """
+    fig, axs = plt.subplots(1, 4, figsize=(24, 6))
+    fig.suptitle(title, fontsize=18)
+
+    axs[0].imshow(mask, cmap='gray')
+    axs[0].set_title("Original Mask")
+    axs[0].axis('off')
+
+    axs[1].imshow(skel, cmap='gray')
+    axs[1].set_title("Skeleton")
+    axs[1].axis('off')
+
+    # Detected lines and center markers
+    overlay1 = cv2.cvtColor(skel, cv2.COLOR_GRAY2BGR)
+    for x1, y1, x2, y2, _ in kept_lines:
+        cv2.line(overlay1, (x1, y1), (x2, y2), (0, 0, 255), 1)
+    for cx, cy in centers:
+        cv2.drawMarker(overlay1, (int(cx), int(cy)), (0, 255, 0),
+                       markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
+        cv2.putText(overlay1, f"({int(cx)}, {int(cy)})", (int(cx) + 10, int(cy) - 10),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=(255, 255, 0), thickness=1)
+    axs[2].imshow(overlay1)
+    axs[2].set_title("Detected Lines & Centers")
+    axs[2].axis('off')
+
+    # Recovered lines from centers (with gap tolerance)
+    overlay2 = cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2BGR)
+    for cx, cy in centers:
+        for angle in [0, 60, 120, 180, 240, 300]:
+            rad = math.radians(angle)
+            gap_count = 0
+            max_gap = 5  # max consecutive missing pixels allowed
+            for r in range(0, 300):
+                x = int(cx + r * math.cos(rad))
+                y = int(cy + r * math.sin(rad))
+                if 0 <= x < mask.shape[1] and 0 <= y < mask.shape[0]:
+                    if mask[y, x] > 0:
+                        overlay2[y, x] = [0, 255, 255]  # yellow
+                        gap_count = 0  # reset gap count
+                    else:
+                        gap_count += 1
+                        if gap_count > max_gap:
+                            break  # stop tracing this line
+                else:
+                    break  # out of bounds
+    axs[3].imshow(overlay2)
+    axs[3].set_title("Recovered PL Star Lines")
+    axs[3].axis('off')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.show()
+
+
