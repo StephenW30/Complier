@@ -179,7 +179,7 @@ def detect_pl_stars_debug(binary_mask,
 
     return centers, kept, closed, skel
 
-
+##########################################################################################################################################
 def visualize_pl_star_detection_horizontal(mask, centers, kept_lines, closed, skel, title="PL Star Detection"):
     fig, axs = plt.subplots(1, 4, figsize=(20, 5))
     fig.suptitle(title, fontsize=18)
@@ -206,6 +206,53 @@ def visualize_pl_star_detection_horizontal(mask, centers, kept_lines, closed, sk
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=(255, 255, 0), thickness=1)
     axs[3].imshow(overlay)
     axs[3].set_title("Detected Lines & Centers")
+    axs[3].axis('off')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    plt.show()
+
+##########################################################################################################################################
+####################### 找到断线
+def visualize_pl_star_detection_with_star_lines(mask, centers, kept_lines, skel, title="PL Star Detection"):
+    fig, axs = plt.subplots(1, 4, figsize=(24, 6))
+    fig.suptitle(title, fontsize=18)
+
+    axs[0].imshow(mask, cmap='gray')
+    axs[0].set_title("Original Mask")
+    axs[0].axis('off')
+
+    axs[1].imshow(skel, cmap='gray')
+    axs[1].set_title("Skeleton")
+    axs[1].axis('off')
+
+    # Detected lines + centers
+    overlay1 = cv2.cvtColor(skel, cv2.COLOR_GRAY2BGR)
+    for x1, y1, x2, y2, _ in kept_lines:
+        cv2.line(overlay1, (x1, y1), (x2, y2), (0, 0, 255), 1)
+    for cx, cy in centers:
+        cv2.drawMarker(overlay1, (int(cx), int(cy)), (0, 255, 0),
+                       markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
+        cv2.putText(overlay1, f"({int(cx)}, {int(cy)})", (int(cx) + 10, int(cy) - 10),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=(255, 255, 0), thickness=1)
+    axs[2].imshow(overlay1)
+    axs[2].set_title("Detected Lines & Centers")
+    axs[2].axis('off')
+
+    # Reverse lookup from center: draw ideal star lines from center on original mask
+    overlay2 = cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2BGR)
+    for cx, cy in centers:
+        for angle in [0, 60, 120, 180, 240, 300]:
+            rad = math.radians(angle)
+            for r in range(0, 300):
+                x = int(cx + r * math.cos(rad))
+                y = int(cy + r * math.sin(rad))
+                if 0 <= x < mask.shape[1] and 0 <= y < mask.shape[0]:
+                    if mask[y, x] > 0:
+                        overlay2[y, x] = [0, 255, 255]  # yellow line
+                    else:
+                        break  # early stop if mask中断裂
+    axs[3].imshow(overlay2)
+    axs[3].set_title("Recovered PL Star Lines")
     axs[3].axis('off')
 
     plt.tight_layout(rect=[0, 0, 1, 0.93])
