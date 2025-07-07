@@ -55,7 +55,7 @@ function [waferData, waferInfo] = LoadMatData(filePath, CONFIG)
     if isfield(matData, 'waferData')
         waferInfo.Name = matData.waferName;
     else
-        [~, waferName, ~] = fileparts(filePath);
+        [~, waferInfo.Name, ~] = fileparts(filePath);
     end
 
     % Replace 0 values with NaN
