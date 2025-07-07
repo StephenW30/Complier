@@ -3,7 +3,7 @@ addpath('D:\stephen\git_Toolbox');
 
 % Define base input and output directories
 baseInputDir  = 'D:\stephen\PL Star\customized_dataset\3-second_round_clean_with_Bosch_remove';
-baseOutputDir = 'D:\stephen\PL Star\customized_dataset\6-sixth_round_hazedata_with_plstar';
+baseOutputDir = 'D:\stephen\PL Star\customized_dataset\6-sixth_round_hazedata_with_plstar_test';
 
 % Core configuration for PLstar simulation initialization
 CONFIG = struct( ...
