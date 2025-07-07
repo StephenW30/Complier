@@ -160,8 +160,8 @@ function maps = generateMultiplePLStarMaps(waferData, waferInfo, CONFIG)
                 baseCenterY = round(height * 0.5);
             else
                 % Subsequent stars: more varied positions
-                baseCenterX = round(width * (0.3 + 0.5 * rand()));
-                baseCenterY = round(height * (0.3 + 0.4 * rand()));
+                baseCenterX = round(width * (0.2 + 0.4 * rand()));
+                baseCenterY = round(height * (0.2 + 0.4 * rand()));
             end
             
             xVariation = round(width * CONFIG.PLstarCenterVariationX * (2 * rand() - 1));
@@ -194,7 +194,7 @@ function maps = generateMultiplePLStarMaps(waferData, waferInfo, CONFIG)
         
         % Generate ellipse parameters for this star
         minDimension = min(height, width);
-        ellipseScale = CONFIG.PLstarEllipseScale * (0.7 + 0.6 * rand()); % Vary size between stars
+        ellipseScale = CONFIG.PLstarEllipseScale * (0.8 + 0.4 * rand()); % Vary size between stars
         ellipseMinorAxis = round(minDimension * ellipseScale);
         ellipseMajorAxis = round(ellipseMinorAxis * CONFIG.PLstarEllipseYXRatio);
         
