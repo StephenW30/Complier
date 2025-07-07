@@ -402,4 +402,263 @@ Invalid values: Handled automatically (0, NaN, min values)
 4. **Validation**: Review visualization outputs for quality
 5. **Integration**: Use generated masks and simulations for ML training
 
-This documentation provides a comprehensive technical reference for the PL star simulation algorithm, suitable for team discussions, code reviews, and system maintenance.
+This documentation provides a comprehensive technical reference for the PL star simulation algorithm, suitable for team discussions, code reviews, and system maintenance.、
+
+
+
+
+# PL Star Simulation Algorithm - Technical Documentation
+
+## Overview
+Generate synthetic photoluminescence (PL) star defect patterns on semiconductor wafer images for machine learning model training. The algorithm creates realistic multi-star configurations with variable characteristics to enhance dataset diversity.
+
+## Key Capabilities
+* **Multi-star generation**: 1-3 PL stars per wafer with configurable probability distribution
+* **Realistic variations**: Line breaks, width variations, and intensity modulation
+* **Quality controls**: Geometric validation and boundary constraints
+* **Batch processing**: Automated processing of wafer datasets
+* **Comprehensive output**: Binary masks, modified images, and visualizations
+
+## Input/Output Summary
+
+```
+INPUT:  .mat files containing 'dw_image' field (wafer photoluminescence data)
+OUTPUT: Binary masks, modified wafer images, and visualization plots
+        Organized in timestamped folder structure
+```
+
+## Algorithm Workflow
+
+### Main Processing Pipeline
+
+```
+ALGORITHM: PL_Star_Simulation_Pipeline
+INPUT: baseInputDir, baseOutputDir, configuration_parameters
+OUTPUT: processed_files_with_PL_stars
+
+BEGIN
+    // 1. SYSTEM INITIALIZATION
+    Initialize_Configuration()
+    Setup_Directory_Structure()
+    
+    // 2. BATCH PROCESSING
+    matFiles = Get_All_Mat_Files(baseInputDir)
+    
+    FOR each file in matFiles:
+        // 2.1 File-level Configuration
+        Generate_Random_Parameters()  // Star count, base width, etc.
+        
+        // 2.2 Data Loading & Preprocessing
+        waferData, waferInfo = Load_And_Preprocess_Wafer(file)
+        
+        // 2.3 PL Star Generation
+        maps = Generate_Multiple_PL_Stars(waferData, waferInfo)
+        
+        // 2.4 Output Generation
+        coordinates = Calculate_Coordinate_System(waferInfo)
+        Generate_Visualizations(maps, coordinates, filename)
+        Save_Results(maps, filename)
+    END FOR
+    
+    Report_Processing_Summary()
+END
+```
+
+## Detailed Component Analysis
+
+### 1. Configuration Management
+The system uses a comprehensive configuration structure that controls all aspects of PL star generation:
+
+**Core Parameters:**
+- `PLstarEllipseYXRatio`: 2.0 (aspect ratio for elliptical boundaries)
+- `PLstarEllipseScale`: 0.1 (base size scaling factor)
+- `PLstarWidth`: 3.0 pixels (base line width, randomized per file)
+- `NumPLStars`: 1-3 (probabilistic distribution: 70%/20%/10%)
+
+**Variation Controls:**
+- `PLstarCenterVariationX/Y`: 0.15/0.2 (position randomization factors)
+- `WidthVariationRange`: [-2, 2] pixels (per-line width variation)
+- `LineBreakProbability`: 0.3 (30% chance of breaks per line)
+- `MaxBreaksPerLine`: 3 (maximum interruptions per line)
+
+### 2. Data Loading and Preprocessing
+
+```
+FUNCTION: loadMatData(filePath, CONFIG)
+INPUT: MAT file path, configuration structure
+OUTPUT: waferData matrix, waferInfo metadata
+
+STEPS:
+1. Load .mat file and extract 'dw_image' field
+2. Handle missing data:
+   - Replace zeros with NaN
+   - Handle specific invalid values (3158064)
+   - Replace minimum values with NaN
+3. Standardize dimensions to 1500×1500 using nearest-neighbor interpolation
+4. Apply vertical flip if configured
+5. Extract/set pixel size metadata (default: 0.1mm)
+```
+
+**Data Quality Assurance:**
+- Validates presence of required 'dw_image' field
+- Handles various invalid data representations
+- Ensures consistent spatial dimensions
+- Preserves physical scaling information
+
+### 3. Multi-Star Generation Engine
+
+```
+FUNCTION: generateMultiplePLStarMaps(waferData, waferInfo, CONFIG)
+INPUT: Preprocessed wafer data, metadata, configuration
+OUTPUT: Combined mask and simulation maps
+
+ALGORITHM:
+1. Initialize combined maps (mask and simulation)
+2. FOR each star (1 to NumPLStars):
+   a. Find valid center position:
+      - First star: near position (0.85×width, 0.5×height)
+      - Additional stars: randomized with distance constraints
+      - Validate against NaN regions and minimum separation
+   b. Generate ellipse parameters with size variation
+   c. Create individual star pattern with breaks
+   d. Combine with overall mask
+3. Apply intensity modulation to create realistic PL signal
+```
+
+**Spatial Constraints:**
+- `MinStarDistance`: 200 pixels minimum separation
+- Position validation against wafer boundaries
+- Avoidance of NaN (invalid) regions
+- Maximum 100 attempts per star placement
+
+### 4. Individual Star Pattern Generation
+
+```
+FUNCTION: generatePLStarWithBreaks(...)
+INPUT: Canvas dimensions, center position, ellipse parameters, line width
+OUTPUT: Binary star pattern mask
+
+PROCESS:
+1. Calculate 6 radial lines at 60° intervals (0°, 60°, 120°, 180°, 240°, 300°)
+2. FOR each line:
+   a. Calculate intersection with elliptical boundary
+   b. Apply width variation (base ± random offset)
+   c. Draw line with potential breaks and local width variations
+3. Ensure unique intersection points to prevent overlapping
+```
+
+**Line Generation Details:**
+- Uses Bresenham's algorithm for pixel-perfect line drawing
+- Implements break generation with configurable probability
+- Applies local width micro-variations for natural appearance
+- Validates all coordinates against image boundaries
+
+### 5. Line Break Implementation
+
+```
+FUNCTION: drawLineWithBreaks(...)
+INPUT: Canvas, wafer data, line endpoints, width, configuration
+OUTPUT: Modified canvas with line pattern
+
+BREAK_ALGORITHM:
+1. Generate line coordinates using Bresenham algorithm
+2. IF random() < LineBreakProbability:
+   a. Generate 1-3 break segments
+   b. Position breaks in middle 60% of line length
+   c. Create break lengths between 10-50 pixels
+   d. Generate draw mask excluding break regions
+3. Apply width with local micro-variations
+4. Draw only non-break segments
+```
+
+### 6. Geometric Calculations
+
+**Line-Ellipse Intersection:**
+```
+Mathematical Implementation:
+- Translate line to ellipse center coordinate system
+- Solve quadratic equation: A·t² + B·t + C = 0
+- Where: A = (dx²/a²) + (dy²/b²)
+         B = (2·x₁·dx/a²) + (2·y₁·dy/b²)
+         C = (x₁²/a²) + (y₁²/b²) - 1
+- Return intersection points with distance-based ordering
+```
+
+### 7. Intensity Modulation
+
+```
+FUNCTION: fillPLStarStructure(masking, waferImg)
+INPUT: Binary mask, original wafer image
+OUTPUT: Modified image with realistic PL signal
+
+PROCESS:
+1. Apply Gaussian smoothing (σ=2, kernel=3×3) to create background
+2. Calculate difference image: original - smoothed
+3. Estimate noise statistics from masked regions
+4. FOR each masked pixel:
+   - Calculate local background value
+   - Apply scaling factor based on probability:
+     * 30% chance: moderate reduction (0.1-0.2% decrease)
+     * 70% chance: stronger reduction (0.2-0.3% decrease)
+   - Update pixel value: background × scaling_factor
+```
+
+**Signal Characteristics:**
+- Creates realistic PL intensity reduction in star regions
+- Maintains spatial correlation with local background
+- Introduces controlled noise variation
+- Preserves overall image statistics
+
+### 8. Output Generation
+
+**Visualization System:**
+- Creates three-panel plots: Raw map, Mask map, Simulation map
+- Supports both pixel and millimeter coordinate systems
+- Applies NaN-aware colormapping with jet colormap
+- Generates statistical overlays (5th-95th percentile)
+- Saves timestamped PNG files
+
+**Data Products:**
+1. **Binary Masks** (.mat): `uint64` arrays indicating star locations
+2. **Modified Images** (.mat): `double` arrays with simulated PL signals
+3. **Visualizations** (.png): Multi-panel comparative plots
+
+**File Organization:**
+```
+output_directory/
+├── MMdd_HHmmss_filename_plot.png           # Visualization
+├── label/
+│   └── MMdd_HHmmss_filename_Mask.mat       # Binary mask
+└── simulation_hazemap/
+    └── MMdd_HHmmss_filename_PLStar.mat     # Modified image
+```
+
+## Performance Characteristics
+
+**Processing Speed:**
+- Typical processing: 2-5 seconds per 1500×1500 wafer image
+- Batch processing with automatic retry mechanisms
+- Memory-efficient operations with in-place modifications
+
+**Quality Metrics:**
+- Geometric validation with 100-attempt retry limit
+- Boundary constraint enforcement
+- Statistical consistency with original data distribution
+- Configurable variation ranges for controlled randomness
+
+## Applications and Use Cases
+
+**Machine Learning Training:**
+- Augmented dataset generation for defect detection models
+- Controlled synthetic data with known ground truth
+- Configurable difficulty levels through parameter adjustment
+
+**Algorithm Validation:**
+- Benchmark dataset creation with precise defect characteristics
+- Ablation studies with systematic parameter variations
+- Performance evaluation across different defect densities
+
+**Research Applications:**
+- Synthetic data generation for rare defect types
+- Parameter sensitivity analysis
+- Automated dataset expansion workflows
