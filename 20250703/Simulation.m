@@ -42,7 +42,7 @@ end
 
 fprintf("All files processed successfully.\n");
 
-function [waferData, waferInfo] = LoadMatData(filePath, CONFIG)
+function [waferData, waferInfo] = loadMatData(filePath, CONFIG)
     matData = load(filePath);
     waferInfo = struct();
 
