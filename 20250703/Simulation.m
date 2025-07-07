@@ -3,7 +3,7 @@ addpath('D:\stephen\git_Toolbox');
 
 % Define base input and output directories
 baseInputDir  = 'D:\stephen\PL Star\customized_dataset\3-second_round_clean_with_Bosch_remove';
-baseOutputDir = 'D:\stephen\PL Star\customized_dataset\6-sixth_round_hazedata_with_plstar_test';
+baseOutputDir = 'D:\stephen\PL Star\customized_dataset\6-sixth_round_hazedata_with_plstar';
 
 % Core configuration for PLstar simulation initialization
 CONFIG = struct( ...
@@ -163,10 +163,12 @@ function img = generatePLStar(width, height, centerX, centerY, ellipseMinor, ell
     validLines = 0;
 
     uniquePoints = containers.Map('KeyType', 'char', 'ValueType', 'any');
+
     for i = 1:length(angles)
         [xIntersect, yIntersect] = lineEllipseIntersection(centerX, centerY, xTemp(i), yTemp(i), centerX, centerY, ellipseMinor, ellipseMajor);
+
         for j = 1:length(xIntersect)
-            fprintf('Intersection point %d: (%.2f, %.2f)\n', j, xIntersect(j), yIntersect(j));
+            fprintf('Intersection point %d: (%.2f, %.2f)\n', i, xIntersect(j), yIntersect(j));
         end
 
         % Check if intersection points are valid
@@ -375,7 +377,7 @@ function plotMaps(maps, coords, fileName, CONFIG)
         mapName = mapNames{i};  % Get the name of the map
         currentMap = maps.(mapName);  % Access the map data
 
-        if length(mapName) > 3
+        if length(mapNames) > 3
             ax(i) = subplot(2, 3, i);
         else
             ax(i) = subplot(1, length(mapNames), i);
