@@ -399,13 +399,12 @@ function plotMaps(maps, coords, fileName, CONFIG)
         end
 
         axis tight; axis equal; colormap('jet'); colorbar();
-        axis([1 coords.width 1 coords.height]);
-        title(mapName, 'Interpreter', 'none', 'FontSize', 10);
+        axis([1 coords.Width 1 coords.Height]);
+        title(mapName, 'FontSize', 10, 'Interpreter', 'none');
         axis xy;
     end
-
     linkaxes(ax, 'xy');
-    sgtitle(sprintf('File: %s', fileName), 'Interpreter', 'none', 'FontSize', 10, 'FontWeight', 'bold');
+    sgtitle(sprintf('File: %s', fileName), 'Interpreter', 'none', 'FontSize', 10);
 
     if ishandle(gcf)
         savePath = fullfile(CONFIG.SavePlotFolderPath, [timestamp, '_', fileName, '_plot.png']);
